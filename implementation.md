@@ -2,6 +2,10 @@
 
 Working directory: `D:\Projects\LidoPacker-v2.0`. v1 (`lido-pack-list`) is read-only reference.
 
+## Source control
+
+GitHub: `https://github.com/lido-alexion/LidoPacker-v2.0` (private, separate from v1 `lido-pack-list`).
+
 ## Catch-up decisions (2026-08-24)
 
 | # | Topic | Decision |
