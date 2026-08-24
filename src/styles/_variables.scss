@@ -1,0 +1,66 @@
+// ─── Lido Alexion Theme ───────────────────────────────────────────────────────
+
+// Brand / accent
+$color-primary:        #00cfff;   // electric cyan (header text, links, active)
+$color-primary-light:  #003344;   // dark teal tint for hover/active states
+$color-primary-dark:   #00aadd;   // slightly deeper cyan
+
+// Semantic
+$color-success:        #16a34a;   // green (progress fill, CTA button)
+$color-success-light:  #dcfce7;
+$color-warning:        #d97706;
+$color-warning-light:  #fef3c7;
+$color-danger:         #dc2626;
+$color-danger-light:   #fee2e2;
+
+// Surfaces
+$color-bg:             #ffffff;   // page background
+$color-header-bg:      #000000;   // top site header
+$color-titlebar-bg:    #2a2a2a;   // app title bar (dark charcoal)
+$color-card-bg:        #FFE4C4;   // bisque trip card background
+$color-surface:        #ffffff;   // general surface / panels
+
+// Text
+$color-text:           #1a1a1a;
+$color-text-muted:     #555555;
+$color-text-on-dark:   #00cfff;   // cyan on dark backgrounds
+$color-text-link:      #2525e8;   // blue link style (trip names)
+
+// Borders
+$color-border:         #d4bfa0;   // warm border matching card palette
+
+// ─── Spacing ──────────────────────────────────────────────────────────────────
+$space-1:  4px;
+$space-2:  8px;
+$space-3:  12px;
+$space-4:  16px;
+$space-5:  20px;
+$space-6:  24px;
+$space-8:  32px;
+$space-10: 40px;
+$space-12: 48px;
+
+// ─── Border radius ────────────────────────────────────────────────────────────
+$radius-sm:   6px;
+$radius-md:   10px;
+$radius-lg:   14px;
+$radius-full: 9999px;
+
+// ─── Shadows ──────────────────────────────────────────────────────────────────
+$shadow-sm: 0 1px 3px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.10);
+$shadow-md: 0 4px 8px rgba(0,0,0,0.18), 0 2px 4px rgba(0,0,0,0.10);
+$shadow-lg: 0 8px 20px rgba(0,0,0,0.20);
+
+// ─── Font ─────────────────────────────────────────────────────────────────────
+$font-family:    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+$font-size-xs:   11px;
+$font-size-sm:   13px;
+$font-size-base: 15px;
+$font-size-md:   16px;
+$font-size-lg:   18px;
+$font-size-xl:   32px;
+$font-size-2xl:  26px;
+
+// ─── Transitions ─────────────────────────────────────────────────────────────
+$transition-fast: 150ms ease;
+$transition-base: 250ms ease;

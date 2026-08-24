@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "lib": ["ES2020"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "./.qa-out",
+    "rootDir": "./src",
+    "declaration": false,
+    "sourceMap": false,
+    "types": ["node"]
+  },
+  "include": [
+    "src/utils/types.ts",
+    "src/utils/timeEngine.ts",
+    "src/utils/search.ts",
+    "src/utils/packingLogic.ts",
+    "src/utils/validation.ts",
+    "src/utils/routes.ts",
+    "src/utils/basePath.ts",
+    "src/utils/tripFilter.ts",
+    "src/utils/tripNames.ts",
+    "src/qa/unitTests.ts"
+  ]
+}
