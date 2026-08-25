@@ -89,6 +89,16 @@ html, body {
 // the top of the list.
 .chrome-collapsible {
   overflow: hidden;
+  // Screens using this (item-selection-screen, packing-screen) are
+  // `display: flex; flex-direction: column`. A flex item's automatic
+  // minimum size floors at 0 (instead of its content size) once it has
+  // `overflow` other than `visible` — this element is otherwise the *only*
+  // flex child eligible for that, so when the sibling list overflows the
+  // screen's height, flexbox squeezes this element down to fit instead of
+  // deferring to the screen's own `overflow-y: auto`. Locking flex-shrink
+  // to 0 keeps this element at its natural/collapsed size (controlled only
+  // by max-height below) and lets the screen scroll instead.
+  flex-shrink: 0;
   transition:
     max-height $transition-base,
     opacity $transition-fast,
