@@ -1391,9 +1391,30 @@ html, body {
   gap: $space-4;
   min-width: 0;
 
+  // Visually grey out every tag so the disabled state is obvious at a
+  // glance, instead of relying on a small opacity dip.
   &:disabled {
-    opacity: 0.72;
+    .chip {
+      background: #e8e8e8;
+      color: $color-text-muted;
+      border-color: #d8d8d8;
+      cursor: not-allowed;
+    }
+
+    .chip--selected {
+      background: #cfcfcf;
+      color: #444;
+      border-color: #b8b8b8;
+    }
+
+    label {
+      color: #999;
+    }
   }
+}
+
+.attr-lock-banner {
+  margin-bottom: $space-2;
 }
 
 .chip-row {
@@ -1455,10 +1476,6 @@ html, body {
     flex-wrap: wrap;
     gap: $space-2;
   }
-}
-
-.packing-packed-toggle {
-  margin: $space-2 0;
 }
 
 .overlay__dialog--details {
