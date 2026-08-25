@@ -154,6 +154,13 @@ assert(displayCategory(swim) === "Beach", "displayCategory uses subcategory");
 assert(displayCategory(tee) === "Essentials", "displayCategory falls back to subcategory/category");
 assert(displayCategory({ ...tee, subcategory: undefined }) === "Clothing", "displayCategory falls back to category");
 
+// Trip-aware displayCategory: only surface a tag-driven subcategory (e.g.
+// "Beach") when the trip actually selected that tag — otherwise fall back
+// to the broader category so unrelated tabs don't appear in the picker.
+assert(displayCategory(swim, defaultTrip) === "Clothing", "unselected tag-driven subcategory falls back to category");
+assert(displayCategory(swim, beachTrip) === "Beach", "selected tag-driven subcategory is kept");
+assert(displayCategory(tee, defaultTrip) === "Essentials", "non-tag-driven (generic) subcategory always shown");
+
 assert(isDateOnly("2026-08-24") === true, "date-only flag");
 assert(isDateOnly("2026-08-24T10:00:00.000Z") === false, "iso not date-only");
 assert(combineDateAndTime("2026-08-24", "") === "2026-08-24", "omit time stores date-only");

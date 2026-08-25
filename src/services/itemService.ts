@@ -153,12 +153,12 @@ export async function getTripItemsWithMeta(tripId: string): Promise<TripItemWith
     .filter((ti) => ti.item != null);
 }
 
-export function fuzzySearch(items: TripItemWithMeta[], query: string): TripItemWithMeta[] {
-  return fuzzySearchByText(items, query, (ti) => [ti.item.name, ti.item.category, displayCategory(ti.item)]);
+export function fuzzySearch(items: TripItemWithMeta[], query: string, trip?: Trip): TripItemWithMeta[] {
+  return fuzzySearchByText(items, query, (ti) => [ti.item.name, ti.item.category, displayCategory(ti.item, trip)]);
 }
 
-export function getCategories(items: TripItemWithMeta[]): string[] {
-  return [...new Set(items.map((ti) => displayCategory(ti.item)))].sort();
+export function getCategories(items: TripItemWithMeta[], trip?: Trip): string[] {
+  return [...new Set(items.map((ti) => displayCategory(ti.item, trip)))].sort();
 }
 
 export function createNewItem(name: string, trip?: Trip, category: string = "Custom"): Item {

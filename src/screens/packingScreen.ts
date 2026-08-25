@@ -14,6 +14,7 @@ import { getPhaseLabel, formatCountdown, formatTimeZoneLabel, parseTripInstant }
 import { showToast } from "../components/toast";
 import { checkMissedItems } from "../services/notificationService";
 import { Trip, TripItem, TripPhase } from "../utils/types";
+import { initAutoHideOnScroll } from "../utils/scrollChrome";
 
 type PackingMode = "all" | "last-minute" | "forgot";
 
@@ -22,6 +23,7 @@ let tripGlobal: Trip | null = null;
 let allItems: TripItemWithMeta[] = [];
 let mode: PackingMode = "all";
 let searchQuery: string = "";
+let searchActive: boolean = false;
 let phase: TripPhase = "EARLY";
 let countdownInterval: ReturnType<typeof setInterval> | null = null;
 let showPacked = true;
@@ -37,6 +39,7 @@ export async function renderPackingScreen(container: HTMLElement, tripId: string
   tripIdGlobal = tripId;
   mode = "all";
   searchQuery = "";
+  searchActive = false;
 
   container.innerHTML = `<div class="screen"><div class="loading"><div class="loading__spinner"></div></div></div>`;
 
@@ -103,7 +106,7 @@ function renderPackingUI(container: HTMLElement, tripName: string, startTime: st
   const tzLabel = formatTimeZoneLabel(tripGlobal?.timezone);
 
   const bannerHtml = getBannerHtml(phase, progress.percent);
-  const modesHtml = getModesHtml();
+  const showSearchInput = searchActive || !!searchQuery;
 
   container.innerHTML = `
     <div class="screen packing-screen">
@@ -113,7 +116,7 @@ function renderPackingUI(container: HTMLElement, tripName: string, startTime: st
         <button class="header__action" id="edit-items-btn">Items</button>
       </div>
 
-      <div class="packing-screen__sticky">
+      <div class="packing-screen__sticky" id="packing-sticky">
         <div class="packing-screen__progress-header">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="badge badge--${phaseBadge(phase)}">${phaseLabel}</span>
@@ -129,18 +132,25 @@ function renderPackingUI(container: HTMLElement, tripName: string, startTime: st
           <div class="progress-bar__fill" style="width:${progress.percent}%"></div>
         </div>
         ${bannerHtml}
-        ${modesHtml}
-        <div class="archive-toggle-row packing-packed-toggle">
-          <span class="archive-toggle-row__label">Show packed items</span>
-          <label class="slider-toggle">
+        <div class="packing-controls-row">
+          <div class="segmented" role="group" aria-label="Item view">
+            <button class="segmented__btn ${mode === "all" ? "segmented__btn--active-primary" : ""}" data-mode="all" title="All items">📋</button>
+            <button class="segmented__btn ${mode === "last-minute" ? "segmented__btn--active-danger" : ""}" data-mode="last-minute" title="Last minute">⚡</button>
+            <button class="segmented__btn ${mode === "forgot" ? "segmented__btn--active-warning" : ""}" data-mode="forgot" title="Forgot">🤔</button>
+          </div>
+          <label class="packed-toggle-inline" title="Show packed items">
             <input type="checkbox" id="show-packed-toggle" ${showPacked ? "checked" : ""} />
-            <span class="slider-toggle__track"></span>
+            <span>Show packed</span>
           </label>
-        </div>
-        <div class="search-bar">
-          <span class="search-bar__icon">🔍</span>
-          <input type="text" id="search-input" placeholder="Search…" value="${escHtml(searchQuery)}" />
-          ${searchQuery ? `<button class="search-bar__clear" id="clear-search">×</button>` : ""}
+          ${showSearchInput ? `
+            <div class="search-bar search-bar--compact-row">
+              <span class="search-bar__icon">🔍</span>
+              <input type="text" id="search-input" placeholder="Search…" value="${escHtml(searchQuery)}" />
+              <button class="search-bar__clear" id="clear-search" title="Close search">×</button>
+            </div>
+          ` : `
+            <button class="icon-btn" id="search-toggle-btn" title="Search items">🔍</button>
+          `}
         </div>
       </div>
 
@@ -168,6 +178,12 @@ function renderPackingUI(container: HTMLElement, tripName: string, startTime: st
       try { next.setSelectionRange(searchCaret, searchCaret); } catch { /* ignore */ }
     }
   }
+
+  // Real-estate optimisation: collapse the site header, then the whole
+  // progress/mode block, as the traveller scrolls down the packing list.
+  const scrollEl = container.querySelector(".screen") as HTMLElement | null;
+  const sticky = container.querySelector("#packing-sticky") as HTMLElement | null;
+  if (scrollEl) initAutoHideOnScroll(scrollEl, [sticky]);
 }
 
 function getBannerHtml(phase: TripPhase, percent: number): string {
@@ -207,16 +223,6 @@ function getBannerHtml(phase: TripPhase, percent: number): string {
   return "";
 }
 
-function getModesHtml(): string {
-  return `
-    <div class="mode-toggle">
-      <button class="mode-toggle__btn ${mode === "all" ? "mode-toggle__btn--active-primary" : ""}" data-mode="all">All Items</button>
-      <button class="mode-toggle__btn ${mode === "last-minute" ? "mode-toggle__btn--active-danger" : ""}" data-mode="last-minute">⚡ Last Minute</button>
-      <button class="mode-toggle__btn ${mode === "forgot" ? "mode-toggle__btn--active-warning" : ""}" data-mode="forgot">🤔 Forgot</button>
-    </div>
-  `;
-}
-
 function renderPackingList(items: TripItemWithMeta[]): string {
   if (items.length === 0) {
     if (searchQuery) {
@@ -234,7 +240,7 @@ function renderPackingList(items: TripItemWithMeta[]): string {
   // Group by category
   const groups = new Map<string, TripItemWithMeta[]>();
   for (const item of items) {
-    const cat = displayCategory(item.item);
+    const cat = displayCategory(item.item, tripGlobal || undefined);
     if (!groups.has(cat)) groups.set(cat, []);
     groups.get(cat)!.push(item);
   }
@@ -296,6 +302,12 @@ function bindPackingEvents(container: HTMLElement, tripName: string, startTime: 
     router.navigate({ name: "item-selection", tripId: tripIdGlobal });
   });
 
+  container.querySelector("#search-toggle-btn")?.addEventListener("click", () => {
+    searchActive = true;
+    renderPackingUI(container, tripName, startTime);
+    (container.querySelector("#search-input") as HTMLInputElement | null)?.focus();
+  });
+
   const searchInput = container.querySelector("#search-input") as HTMLInputElement;
   searchInput?.addEventListener("input", () => {
     searchQuery = searchInput.value;
@@ -304,6 +316,7 @@ function bindPackingEvents(container: HTMLElement, tripName: string, startTime: 
 
   container.querySelector("#clear-search")?.addEventListener("click", () => {
     searchQuery = "";
+    searchActive = false;
     renderPackingUI(container, tripName, startTime);
   });
 

@@ -90,9 +90,15 @@ export function renderAttributeFields(attrs: TripAttributes, locked: boolean): s
   ];
   const typeSelected = attrs.types;
   const lockNote = locked ? `
-    <div class="form-hint form-hint--warn">
-      Traveller, transport, weather and trip type cannot be changed while items are on this trip.
-      Remove all items first if you want to edit these.
+    <div class="banner banner--warning attr-lock-banner">
+      <div class="banner__icon">🔒</div>
+      <div class="banner__content">
+        <div class="banner__title">Trip tags are locked</div>
+        <div class="banner__subtitle">
+          Traveller, transport, weather and trip type can't be changed while items are on this trip.
+          Remove all items first if you want to edit these.
+        </div>
+      </div>
     </div>
   ` : "";
 

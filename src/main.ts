@@ -12,6 +12,7 @@ import { renderCloneTripScreen } from "./screens/cloneTripScreen";
 import { initNotificationRuntime } from "./services/notificationService";
 import { isOnline, onConnectivityChange } from "./utils/offline";
 import { assetPath } from "./utils/basePath";
+import { resetGlobalChrome } from "./utils/scrollChrome";
 
 const siteHeader = document.createElement("div");
 siteHeader.className = "site-header";
@@ -30,8 +31,28 @@ onConnectivityChange((online) => {
 
 const app = document.getElementById("app")!;
 
+// On wide/desktop viewports the app card is centered with empty space on
+// either side. Wheel/trackpad scrolling over that empty space used to do
+// nothing because only the inner `.screen` element scrolls. Forward wheel
+// input from anywhere on the page to the active scrollable screen so the
+// whole browser window feels scrollable, not just the narrow app column.
+document.addEventListener(
+  "wheel",
+  (e) => {
+    if (app.contains(e.target as Node)) return;
+    const scrollEl = app.querySelector(".screen") as HTMLElement | null;
+    if (!scrollEl) return;
+    scrollEl.scrollTop += e.deltaY;
+  },
+  { passive: true }
+);
+
 async function navigate(route: Route): Promise<void> {
   teardownPackingScreen();
+  // Screens that auto-hide the shared header on scroll (item-selection,
+  // packing) re-initialise it themselves; screens that don't should never
+  // inherit a collapsed header left over from the previous screen.
+  resetGlobalChrome();
   switch (route.name) {
     case "home":
       await renderHomeScreen(app);

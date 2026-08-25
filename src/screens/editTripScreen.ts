@@ -38,6 +38,10 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
   const endDate = toDateInputValue(trip.endTime);
   const endTime = toTimeInputValue(trip.endTime);
 
+  // Snapshot of the form's initial values, used to keep "Save Changes"
+  // disabled until the traveller actually edits something.
+  const initialSnapshot = formSnapshot(trip.name, trip.location, startDate, startTime, endDate, endTime, attrs);
+
   container.innerHTML = `
     <div class="screen">
       <div class="header">
@@ -71,20 +75,39 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
           <input type="time" id="trip-end-time" value="${escHtml(endTime)}" />
         </div>
         <div id="attr-host"></div>
+        ${locked ? `<button type="button" class="btn btn--secondary btn--full" id="remove-items-btn">🧹 Remove all items to edit tags</button>` : ""}
         <div id="form-error" class="form-error" style="display:none"></div>
-        <button class="btn btn--primary btn--full" id="save-btn">Save Changes</button>
+        <button class="btn btn--primary btn--full" id="save-btn" disabled>Save Changes</button>
       </div>
     </div>
   `;
 
   const attrHost = container.querySelector("#attr-host") as HTMLElement;
+  const saveBtn = container.querySelector("#save-btn") as HTMLButtonElement;
+
+  const refreshSaveState = (): void => {
+    const dirty = initialSnapshot !== currentFormSnapshot(container, attrs);
+    saveBtn.disabled = !dirty;
+  };
+
   const drawAttrs = () => {
     attrHost.innerHTML = renderAttributeFields(attrs, locked);
-    bindAttributeFields(attrHost, () => attrs, (next) => { attrs = next; drawAttrs(); }, locked);
+    bindAttributeFields(attrHost, () => attrs, (next) => { attrs = next; drawAttrs(); refreshSaveState(); }, locked);
   };
   drawAttrs();
 
   container.querySelector("#back-btn")?.addEventListener("click", () => router.navigate({ name: "home" }, { replace: true }));
+
+  container.querySelector("#remove-items-btn")?.addEventListener("click", () => {
+    confirmRemoveItems(trip, container, tripId);
+  });
+
+  container.querySelectorAll<HTMLInputElement>(
+    "#trip-name, #trip-location, #trip-start-date, #trip-start-time, #trip-end-date, #trip-end-time"
+  ).forEach((input) => {
+    input.addEventListener("input", refreshSaveState);
+    input.addEventListener("change", refreshSaveState);
+  });
 
   const startDateInput = container.querySelector("#trip-start-date") as HTMLInputElement;
   const endDateInput = container.querySelector("#trip-end-date") as HTMLInputElement;
@@ -93,7 +116,10 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
       endDateInput.min = startDateInput.value;
       if (endDateInput.value && endDateInput.value < startDateInput.value) endDateInput.value = "";
     }
+    refreshSaveState();
   });
+
+  refreshSaveState();
 
   container.querySelector("#save-btn")?.addEventListener("click", async () => {
     const name = (container.querySelector("#trip-name") as HTMLInputElement).value.trim();
@@ -155,6 +181,69 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
 function showError(el: HTMLElement, msg: string): void {
   el.textContent = msg;
   el.style.display = "block";
+}
+
+/** Stable snapshot of the editable form state, used to detect real changes
+ *  (array order from toggling tags on/off is normalised so re-selecting the
+ *  same tags doesn't falsely look "dirty"). */
+function formSnapshot(
+  name: string,
+  location: string,
+  startDate: string,
+  startTime: string,
+  endDate: string,
+  endTime: string,
+  attrs: TripAttributes
+): string {
+  return JSON.stringify({
+    name: name.trim(),
+    location: location.trim(),
+    startDate,
+    startTime,
+    endDate,
+    endTime,
+    travellers: [...attrs.travellers].sort(),
+    vehicles: [...attrs.vehicles].sort(),
+    weathers: [...attrs.weathers].sort(),
+    types: [...attrs.types].sort(),
+  });
+}
+
+function currentFormSnapshot(container: HTMLElement, attrs: TripAttributes): string {
+  const val = (id: string) => (container.querySelector(`#${id}`) as HTMLInputElement)?.value ?? "";
+  return formSnapshot(
+    val("trip-name"),
+    val("trip-location"),
+    val("trip-start-date"),
+    val("trip-start-time"),
+    val("trip-end-date"),
+    val("trip-end-time"),
+    attrs
+  );
+}
+
+function confirmRemoveItems(trip: Trip, container: HTMLElement, tripId: string): void {
+  const overlay = document.createElement("div");
+  overlay.className = "overlay";
+  overlay.innerHTML = `
+    <div class="overlay__dialog">
+      <div class="overlay__title">Remove all items?</div>
+      <div class="overlay__message">This clears your item selections for this trip so you can change traveller, transport, weather and trip type tags. You'll pick items again afterwards.</div>
+      <div class="overlay__actions">
+        <button class="btn btn--secondary" style="flex:1" id="cancel-remove">Cancel</button>
+        <button class="btn btn--danger" style="flex:1" id="confirm-remove">Remove items</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector("#cancel-remove")?.addEventListener("click", () => overlay.remove());
+  overlay.querySelector("#confirm-remove")?.addEventListener("click", async () => {
+    await replaceTripItems(trip);
+    overlay.remove();
+    showToast("All items removed — tags unlocked");
+    renderEditTripScreen(container, tripId);
+  });
 }
 
 function escHtml(str: string): string {

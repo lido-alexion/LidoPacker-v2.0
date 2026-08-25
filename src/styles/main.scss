@@ -73,6 +73,51 @@ html, body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  // The chrome-collapse logic (see scrollChrome.ts) deliberately restores
+  // scrollTop to a value captured under the *previous* chrome layout, then
+  // re-applies that same collapsed/expanded state — a self-consistent
+  // sequence on its own. Without this, the browser's default scroll
+  // anchoring "corrects" the resulting layout shift a second time, fighting
+  // our restore and drifting scrollTop further on every re-render.
+  overflow-anchor: none;
+}
+
+// ─── Auto-hide chrome on scroll ──────────────────────────────────────────────
+// See src/utils/scrollChrome.ts. Applied to bars that eat real estate on
+// short viewports (site header, item-selection toolbar, packing progress
+// block) so they collapse out of the way while scrolling and reappear near
+// the top of the list.
+.chrome-collapsible {
+  overflow: hidden;
+  // Screens using this (item-selection-screen, packing-screen) are
+  // `display: flex; flex-direction: column`. A flex item's automatic
+  // minimum size floors at 0 (instead of its content size) once it has
+  // `overflow` other than `visible` — this element is otherwise the *only*
+  // flex child eligible for that, so when the sibling list overflows the
+  // screen's height, flexbox squeezes this element down to fit instead of
+  // deferring to the screen's own `overflow-y: auto`. Locking flex-shrink
+  // to 0 keeps this element at its natural/collapsed size (controlled only
+  // by max-height below) and lets the screen scroll instead.
+  flex-shrink: 0;
+  transition:
+    max-height $transition-base,
+    opacity $transition-fast,
+    padding-top $transition-base,
+    padding-bottom $transition-base,
+    margin-top $transition-base,
+    margin-bottom $transition-base,
+    border-width $transition-base;
+}
+
+.chrome-collapsed {
+  max-height: 0 !important;
+  opacity: 0;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  border-width: 0 !important;
+  pointer-events: none;
 }
 
 // ─── Site Header (black bar — HEADER, Nulshock font kept) ────────────────────
@@ -790,49 +835,83 @@ html, body {
   to { transform: rotate(360deg); }
 }
 
-// ─── Mode toggle ─────────────────────────────────────────────────────────────
-.mode-toggle {
+// ─── Segmented icon toggle (view mode) + packing controls row ───────────────
+// Replaces the old full-width text mode-toggle buttons with a compact
+// icon-based 3-state switch (à la light/system/dark theme pickers), freeing
+// up vertical space on the packing screen.
+.packing-controls-row {
   display: flex;
-  gap: $space-2;
-  padding: $space-3 $space-4;
+  align-items: center;
+  gap: $space-3;
+  padding: $space-2 $space-4;
+  flex-wrap: wrap;
+}
+
+.segmented {
+  display: inline-flex;
+  border-radius: $radius-full;
+  border: 1.5px solid $color-border;
+  overflow: hidden;
   background: $color-surface;
-  border-bottom: 1px solid $color-border;
+  flex-shrink: 0;
 
   &__btn {
-    flex: 1;
-    padding: $space-2 $space-3;
-    border-radius: 3px;
-    border: 1.5px solid $color-border;
-    background: $color-surface;
+    width: 38px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-right: 1px solid $color-border;
+    background: transparent;
     color: $color-text-muted;
-    font-size: $font-size-sm;
+    font-size: 15px;
     cursor: pointer;
     transition: all $transition-fast;
-    text-align: center;
 
-    &--active-primary {
-      background: $color-titlebar-bg;
-      color: $color-primary;
-      border-color: $color-primary;
-    }
+    &:last-child { border-right: none; }
 
-    &--active-warning {
-      background: $color-warning-light;
-      color: $color-warning;
-      border-color: $color-warning;
-    }
+    &--active-primary { background: $color-titlebar-bg; color: $color-primary; }
+    &--active-warning { background: $color-warning-light; color: $color-warning; }
+    &--active-danger  { background: $color-danger-light;  color: $color-danger; }
 
-    &--active-danger {
-      background: $color-danger-light;
-      color: $color-danger;
-      border-color: $color-danger;
-    }
-
-    &:hover:not([class*="active"]) {
-      background: #f5f5f5;
-      border-color: #aaa;
-    }
+    &:hover:not([class*="active"]) { background: #f5f5f5; }
   }
+}
+
+.packed-toggle-inline {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  white-space: nowrap;
+  cursor: pointer;
+
+  input[type="checkbox"] { width: 15px; height: 15px; cursor: pointer; }
+}
+
+.icon-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid $color-border;
+  background: $color-surface;
+  color: $color-text-muted;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all $transition-fast;
+  flex-shrink: 0;
+
+  &:hover { border-color: $color-success; color: $color-success; }
+}
+
+.search-bar--compact-row {
+  flex: 1 1 100%;
+  order: 3;
 }
 
 // ─── Home screen ─────────────────────────────────────────────────────────────
@@ -1329,9 +1408,30 @@ html, body {
   gap: $space-4;
   min-width: 0;
 
+  // Visually grey out every tag so the disabled state is obvious at a
+  // glance, instead of relying on a small opacity dip.
   &:disabled {
-    opacity: 0.72;
+    .chip {
+      background: #e8e8e8;
+      color: $color-text-muted;
+      border-color: #d8d8d8;
+      cursor: not-allowed;
+    }
+
+    .chip--selected {
+      background: #cfcfcf;
+      color: #444;
+      border-color: #b8b8b8;
+    }
+
+    label {
+      color: #999;
+    }
   }
+}
+
+.attr-lock-banner {
+  margin-bottom: $space-2;
 }
 
 .chip-row {
@@ -1393,10 +1493,6 @@ html, body {
     flex-wrap: wrap;
     gap: $space-2;
   }
-}
-
-.packing-packed-toggle {
-  margin: $space-2 0;
 }
 
 .overlay__dialog--details {

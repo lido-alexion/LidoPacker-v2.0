@@ -10,6 +10,7 @@ import {
 } from "../services/itemService";
 import { showToast } from "../components/toast";
 import { Trip, TripItem } from "../utils/types";
+import { initAutoHideOnScroll } from "../utils/scrollChrome";
 
 let allItems: TripItemWithMeta[] = [];
 let activeCategory: string = "All";
@@ -32,8 +33,18 @@ export async function renderItemSelectionScreen(container: HTMLElement, id: stri
   renderUI(container, trip.name);
 }
 
-function renderUI(container: HTMLElement, tripName: string, searchCaret?: number): void {
-  const categories = ["All", ...getCategories(allItems)];
+/** Item's display category for *this* trip — see `displayCategory` for why
+ *  the trip matters (keeps tabs limited to what was actually selected). */
+function catFor(ti: TripItemWithMeta): string {
+  return displayCategory(ti.item, tripGlobal || undefined);
+}
+
+function renderUI(
+  container: HTMLElement,
+  tripName: string,
+  opts: { searchCaret?: number; scrollTop?: number } = {}
+): void {
+  const categories = ["All", ...getCategories(allItems, tripGlobal || undefined)];
   const filtered = getFilteredItems();
   const selectedCount = filtered.filter((ti) => ti.isSelected).length;
   const allVisibleSelected = filtered.length > 0 && selectedCount === filtered.length;
@@ -65,7 +76,7 @@ function renderUI(container: HTMLElement, tripName: string, searchCaret?: number
       <div class="pill-tabs" id="category-tabs">
         ${categories.map((cat) => `
           <button class="pill-tabs__tab ${cat === activeCategory ? "pill-tabs__tab--active" : ""}" data-cat="${escHtml(cat)}">
-            ${escHtml(cat)} ${cat === "All" ? `(${allItems.length})` : `(${allItems.filter(ti => displayCategory(ti.item) === cat).length})`}
+            ${escHtml(cat)} ${cat === "All" ? `(${allItems.length})` : `(${allItems.filter(ti => catFor(ti) === cat).length})`}
           </button>
         `).join("")}
       </div>
@@ -83,7 +94,22 @@ function renderUI(container: HTMLElement, tripName: string, searchCaret?: number
   `;
 
   bindEvents(container, tripName);
-  if (searchCaret !== undefined) restoreSearchFocus(container, searchCaret);
+  if (opts.searchCaret !== undefined) restoreSearchFocus(container, opts.searchCaret);
+  const scrollEl = container.querySelector(".screen") as HTMLElement | null;
+  if (opts.scrollTop !== undefined && scrollEl) scrollEl.scrollTop = opts.scrollTop;
+
+  // Real-estate optimisation: collapse the site header, then the search /
+  // select-all toolbar, as the traveller scrolls down the item list.
+  if (scrollEl) {
+    const toolbar = container.querySelector(".item-selection-toolbar") as HTMLElement | null;
+    initAutoHideOnScroll(scrollEl, [toolbar]);
+  }
+}
+
+/** Current scroll offset of the screen, so re-renders (e.g. after toggling a
+ *  checkbox) don't reset the list back to the top on the user. */
+function currentScrollTop(container: HTMLElement): number {
+  return (container.querySelector(".screen") as HTMLElement | null)?.scrollTop ?? 0;
 }
 
 function renderItemsList(items: TripItemWithMeta[]): string {
@@ -93,7 +119,7 @@ function renderItemsList(items: TripItemWithMeta[]): string {
 
   const groups = new Map<string, TripItemWithMeta[]>();
   for (const item of items) {
-    const cat = displayCategory(item.item);
+    const cat = catFor(item);
     if (!groups.has(cat)) groups.set(cat, []);
     groups.get(cat)!.push(item);
   }
@@ -158,17 +184,18 @@ function getFilteredItems(): TripItemWithMeta[] {
   // Global search: a query searches across every category.
   let items = searchQuery.trim()
     ? allItems
-    : (activeCategory === "All" ? allItems : allItems.filter(ti => displayCategory(ti.item) === activeCategory));
-  if (searchQuery) items = fuzzySearch(items, searchQuery);
+    : (activeCategory === "All" ? allItems : allItems.filter(ti => catFor(ti) === activeCategory));
+  if (searchQuery) items = fuzzySearch(items, searchQuery, tripGlobal || undefined);
   return items;
 }
 
 async function setSelection(items: TripItemWithMeta[], selected: boolean, container: HTMLElement, tripName: string): Promise<void> {
+  const scrollTop = currentScrollTop(container);
   for (const ti of items) {
     ti.isSelected = selected;
     await tripItemsDB.put(ti as TripItem);
   }
-  renderUI(container, tripName);
+  renderUI(container, tripName, { scrollTop });
 }
 
 function bindEvents(container: HTMLElement, tripName: string): void {
@@ -188,7 +215,7 @@ function bindEvents(container: HTMLElement, tripName: string): void {
   const searchInput = container.querySelector("#search-input") as HTMLInputElement;
   searchInput?.addEventListener("input", () => {
     searchQuery = searchInput.value;
-    renderUI(container, tripName, searchInput.selectionStart ?? searchQuery.length);
+    renderUI(container, tripName, { searchCaret: searchInput.selectionStart ?? searchQuery.length });
   });
   container.querySelector("#clear-search")?.addEventListener("click", () => {
     searchQuery = "";
@@ -213,7 +240,7 @@ function bindEvents(container: HTMLElement, tripName: string): void {
   container.querySelectorAll<HTMLInputElement>("[data-cat-toggle]").forEach((cb) => {
     cb.addEventListener("change", async () => {
       const cat = cb.dataset.catToggle!;
-      const catItems = getFilteredItems().filter(ti => displayCategory(ti.item) === cat);
+      const catItems = getFilteredItems().filter(ti => catFor(ti) === cat);
       const shouldSelect = !catItems.every(ti => ti.isSelected);
       await setSelection(catItems, shouldSelect, container, tripName);
     });
@@ -222,12 +249,18 @@ function bindEvents(container: HTMLElement, tripName: string): void {
   container.querySelectorAll<HTMLElement>("[data-check-row]").forEach((row) => {
     row.addEventListener("click", async (e) => {
       if ((e.target as HTMLElement).closest("[data-stepper-area]")) return;
+      // The row's own checkbox already has a "change" handler below; without
+      // this guard, clicking the checkbox fires both handlers (the click
+      // bubbling from the checkbox, plus its native change event), toggling
+      // selection and re-rendering twice per click.
+      if ((e.target as HTMLElement).closest("input")) return;
       const itemId = row.dataset.checkRow!;
       const ti = allItems.find((i) => i.itemId === itemId);
       if (ti) {
+        const scrollTop = currentScrollTop(container);
         ti.isSelected = !ti.isSelected;
         await tripItemsDB.put(ti as TripItem);
-        renderUI(container, tripName);
+        renderUI(container, tripName, { scrollTop });
       }
     });
   });
@@ -238,9 +271,10 @@ function bindEvents(container: HTMLElement, tripName: string): void {
       const itemId = (cb as HTMLElement).dataset.check!;
       const ti = allItems.find((i) => i.itemId === itemId);
       if (ti) {
+        const scrollTop = currentScrollTop(container);
         ti.isSelected = (cb as HTMLInputElement).checked;
         await tripItemsDB.put(ti as TripItem);
-        renderUI(container, tripName);
+        renderUI(container, tripName, { scrollTop });
       }
     });
   });
@@ -292,7 +326,7 @@ function bindEvents(container: HTMLElement, tripName: string): void {
     await tripItemsDB.put(newTripItem);
     allItems = await getTripItemsWithMeta(tripId);
     searchQuery = "";
-    activeCategory = displayCategory(newItem);
+    activeCategory = displayCategory(newItem, tripGlobal || undefined);
     showToast(`"${newItem.name}" added`);
     renderUI(container, tripName);
   });
