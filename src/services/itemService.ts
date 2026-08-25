@@ -5,6 +5,7 @@ import { fuzzySearchByText } from "../utils/search";
 import { validateItem, validateTripItem } from "../utils/validation";
 import { computeProgress, derivePackingState, sortTripItems, sortCategoryItems } from "../utils/packingLogic";
 import { displayCategory, itemMatchesTrip } from "../utils/tripFilter";
+import { sanitiseSuggestionName } from "../utils/suggestion";
 
 export type { TripItemWithMeta };
 export { computeProgress, derivePackingState, sortTripItems, sortCategoryItems, displayCategory };
@@ -62,7 +63,7 @@ export function getCategories(items: TripItemWithMeta[], trip?: Trip): string[] 
 export function createNewItem(name: string, trip?: Trip, category: string = "Custom"): Item {
   const item: Item = {
     id: `custom_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-    name: name.trim(),
+    name: sanitiseSuggestionName(name),
     category,
     subcategory: "Custom",
     type: "PACK",
@@ -75,6 +76,22 @@ export function createNewItem(name: string, trip?: Trip, category: string = "Cus
   };
   const err = validateItem(item);
   if (err) throw new Error(err);
+  return item;
+}
+
+export async function addCustomItemToTrip(name: string, trip: Trip): Promise<Item> {
+  const item = createNewItem(name, trip);
+  await itemsDB.put(item);
+  const tripItem: TripItem = {
+    tripId: trip.id,
+    itemId: item.id,
+    count: 1,
+    isSelected: true,
+    isPacked: false,
+  };
+  const err = validateTripItem(tripItem);
+  if (err) throw new Error(err);
+  await tripItemsDB.put(tripItem);
   return item;
 }
 

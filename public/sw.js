@@ -1,4 +1,4 @@
-const CACHE_NAME = "lidopacker-v2-cache-v6";
+const CACHE_NAME = "lidopacker-v2-cache-v7";
 const DB_NAME = "LidoPackerDB";
 const BASE = "/packer";
 const STATIC_ASSETS = [
@@ -36,6 +36,11 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
+
+  // PHP endpoints and the admin page must hit the network (never Cache Storage).
+  if (url.pathname.includes("/admin/") || url.pathname.includes("/api/") || url.pathname.endsWith(".php")) {
+    return;
+  }
 
   // Always revalidate the master item list so last_updated can take effect.
   if (url.pathname === `${BASE}/catalog.json`) {

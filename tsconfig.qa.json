@@ -25,6 +25,7 @@
     "src/utils/tripFilter.ts",
     "src/utils/tripNames.ts",
     "src/utils/catalogSync.ts",
+    "src/utils/suggestion.ts",
     "src/data/catalog.json",
     "src/qa/unitTests.ts"
   ]

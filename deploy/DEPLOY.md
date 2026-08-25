@@ -3,7 +3,7 @@
 **Live URL:** `https://www.lidoalexion.com/packer/`  
 **Account:** `/home/p7xatiz6j0mk/public_html/packer/` (same host as Portfolio)
 
-This app is static files only. There is no PHP, database, or migrate step.
+This app is mostly static files. PHP is used only for item suggestions (`api/suggest-item.php` and `/packer/admin/`). There is no MySQL step.
 
 ## 1. Prepare (from this repo)
 
@@ -26,8 +26,10 @@ Replace **all** files under `public_html/packer/` with `deploy/staging/packer/`.
 |---|---|
 | Asset URLs | Webpack `publicPath: '/packer/'` |
 | Deep links (`/packer/trips/:id`) | `public/.htaccess` rewrites missing paths to `index.html` |
-| Returning visitors | `sw.js` cache name bump (`lidopacker-v2-cache-v6` for this release) drops the old Cache Storage |
+| Returning visitors | `sw.js` cache name bump (`lidopacker-v2-cache-v7` for this release) drops the old Cache Storage |
 | Master item list | `catalog.json` (network-first). Bump `last_updated` when adding/editing items. |
+| Item suggestions | JSON file at `public_html/packer-data/suggestions.json` (created on first suggest). **Do not delete that folder** when replacing `packer/`. |
+| Suggestion admin | https://www.lidoalexion.com/packer/admin/ — password only. File `{cPanel home}/lidopacker-admin-password.php` (above `public_html`). Default `PackReview26!` until you edit that file via FTP. |
 
 ## 4. Smoke test
 
@@ -35,6 +37,8 @@ Replace **all** files under `public_html/packer/` with `deploy/staging/packer/`.
 2. View source: hashed `main.*.js` / `main.*.css` from `deploy/deploy-table.md`.
 3. Create a trip → packing → refresh stays on that URL.
 4. Item picker: long list, toolbar stays usable; checkbox toggle does not jump scroll.
+
+5. Open item picker: **+ Add item** saves locally; after deploy, confirm a row appears on `/packer/admin/`.
 
 ## 5. Data note
 

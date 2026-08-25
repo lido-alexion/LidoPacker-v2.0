@@ -7,6 +7,7 @@ import { isKnownPath, pathFor, routeFromPath, normalizePath } from "../utils/rou
 import { displayCategory, itemMatchesTrip } from "../utils/tripFilter";
 import { isTripNameTaken, uniqueCloneName } from "../utils/tripNames";
 import { isCatalogNewer, mergeCatalogItems, parseCatalogFile, remapLegacyBaseItems, typeAndStageForV1Category } from "../utils/catalogSync";
+import { sanitiseSuggestionName, SUGGESTION_NAME_MAX } from "../utils/suggestion";
 import { Item, Trip, TripItem } from "../utils/types";
 import catalogFile from "../data/catalog.json";
 
@@ -295,6 +296,18 @@ assert(remapped.itemIdsToDelete.includes("i_tshirts"), "T-Shirts placeholder is 
 assert(remapped.itemsToPut.some((i) => i.id === "custom_i_mystery"), "unmatched i_* becomes custom");
 assert(remapped.tripItemsToPut.some((r) => r.itemId === "custom_i_mystery" && r.isPacked), "unmatched packed state is kept on custom id");
 assert(remapLegacyBaseItems([mk({ id: "434", name: "Toothbrush" })], [], v1Catalog).remapped === false, "numeric catalog ids are not remapped");
+
+assert(sanitiseSuggestionName("  Travel   pillow  ") === "Travel pillow", "suggestion name collapses spaces");
+assert(sanitiseSuggestionName("x".repeat(100)).length === SUGGESTION_NAME_MAX, "suggestion name is capped");
+assert(sanitiseSuggestionName("   ") === "", "blank suggestion name is empty");
+assert(
+  mergeCatalogItems(
+    [catalogItem("custom_user_pillow")],
+    [catalogItem("1"), catalogItem("669")],
+    new Set()
+  ).toPut.some((i) => i.id === "custom_user_pillow"),
+  "catalog refresh keeps user-added custom items"
+);
 
 console.log(`${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

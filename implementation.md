@@ -144,6 +144,21 @@ On refresh: upsert server items; keep `custom_*`; keep removed catalog ids that 
 
 **To ship catalog edits:** change `src/data/catalog.json` **and bump `last_updated`** to a later ISO UTC timestamp (or re-run the port script and bump the date). Clients that already have the old date will not refresh if the timestamp is unchanged. You can also replace only `catalog.json` on the host (no JS rebuild) as long as `last_updated` is newer. Service worker uses network-first for that file; Apache sends `Cache-Control: no-cache`.
 
+## User-added items and suggestion review
+
+Item-selection always shows **+ Add item** (search text pre-fills the name). The item is written to IndexedDB as `custom_*`, selected on the current trip, and tagged with that trip’s attributes so it keeps matching. Catalog sync already keeps `custom_*` rows when `/packer/catalog.json` updates.
+
+A copy of the name is POSTed to `/packer/api/suggest-item.php` (fire-and-forget; packing still works if PHP is down or you are on webpack-dev-server). Suggestions are **not** MySQL. They append to JSON at `{public_html}/packer-data/suggestions.json` (sibling of `packer/`, so a full folder replace of `packer/` does not wipe them). Same name is counted, not duplicated. Max 80 characters, 3000 unique names.
+
+Admin (lightweight, one page): https://www.lidoalexion.com/packer/admin/
+
+- Password only (no username). Default password `PackReview26!` is written on first visit to `{cPanel home}/lidopacker-admin-password.php` — three levels above `packer/php/`, i.e. next to `public_html`, so FTP/File Manager can edit it and the web server will not list or serve it.
+- To change the password: open that file via FTP, edit the `return '...';` line, save.
+- List is A–Z by item name, with times-suggested and first/last seen.
+- **Clear all** empties the JSON file.
+
+No per-row approve/merge into `catalog.json` yet — copy names you want into the master list by hand, then bump `last_updated`. A DB-backed suggestion inbox is deferred until volume needs it.
+
 ## Router
 
 Basename **`/packer`**. Paths:
@@ -177,7 +192,7 @@ Same GoDaddy/cPanel host as Portfolio. Serve `dist/` as `/packer/`.
 powershell -ExecutionPolicy Bypass -File deploy/prepare-upload.ps1
 ```
 
-Upload `deploy/staging/packer/` over `public_html/packer/` (replace the whole folder, including hidden `.htaccess`). Details: [deploy/DEPLOY.md](deploy/DEPLOY.md). This release bumps the service-worker cache to `lidopacker-v2-cache-v6`.
+Upload `deploy/staging/packer/` over `public_html/packer/` (replace the whole folder, including hidden `.htaccess`). Details: [deploy/DEPLOY.md](deploy/DEPLOY.md). This release bumps the service-worker cache to `lidopacker-v2-cache-v7`.
 
 ### Storage Error on the dashboard (2026-08-25)
 

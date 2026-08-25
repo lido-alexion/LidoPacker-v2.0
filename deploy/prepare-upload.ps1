@@ -77,7 +77,9 @@ Do not merge into the old v1 files. Delete the existing ``packer`` contents firs
 3. Create a trip, open packing, refresh - you should stay on that trip, not bounce home.
 4. Open a long item list and confirm the toolbar does not collapse to a sliver.
 
-No database migrate. Packing data lives in the browser (IndexedDB). v1 ``localStorage`` trips are **not** imported yet (deferred).
+Do not delete ``public_html/packer-data/`` when replacing the packer folder (user item suggestions live there).
+
+No MySQL. Packing data lives in the browser (IndexedDB). v1 ``localStorage`` trips are **not** imported yet (deferred).
 "@ | Set-Content -Path $table -Encoding utf8
 
 Write-Host "Staged $files files to $staging"

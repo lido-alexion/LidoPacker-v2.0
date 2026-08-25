@@ -84,7 +84,8 @@ module.exports = (env, argv) => {
               }
               return next();
             }
-            if (/\.(js|css|map|png|json|ico|svg|woff2?)$/i.test(pathname)) return next();
+            if (/\.(js|css|map|png|json|ico|svg|woff2?|php)$/i.test(pathname)) return next();
+            if (pathname.startsWith('/packer/admin') || pathname.startsWith('/packer/api/')) return next();
             if (pathname.startsWith('/packer/main.')) return next();
             req.url = '/packer/index.html';
             return next();
