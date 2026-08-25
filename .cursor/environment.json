@@ -1,0 +1,10 @@
+{
+  "name": "LidoPacker v2",
+  "install": "npm ci",
+  "terminals": [
+    {
+      "name": "dev-server",
+      "command": "npm run dev"
+    }
+  ]
+}
