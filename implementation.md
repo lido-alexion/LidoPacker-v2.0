@@ -25,7 +25,7 @@ GitHub: `https://github.com/lido-alexion/LidoPacker-v2.0` (private, separate fro
 | 16 | Name + location split | **Keep v2 behaviour** |
 | 17 | Header | Link **Lido Alexion** → https://www.lidoalexion.com |
 | 18 | Deploy path | **`/packer/`** |
-| 19+ | v1 wishlist (luggage, item admin, export, accounts, …) | **Later pass** |
+| 19+ | v1 wishlist (luggage, item admin, export, accounts, …) | **Partial** — trip bags + packing assignment done; item admin / export / accounts still later |
 
 ### Category vs subcategory (item 4)
 
@@ -41,7 +41,7 @@ v2 uses a single grouping key: `displayCategory = item.subcategory || item.categ
 ### Deferred (do not implement in this pass)
 
 1. **v1 localStorage import** — map trip-name keys into IndexedDB `trips` / `tripItems`.
-2. **v1 wishlist (item 19+)** — luggage on items, item admin (add/edit/delete catalog), user preferences, color themes, backup/export/import, accounts/cloud sync, login, accessibility pass. See v1 `App.tsx` future to-dos.
+2. **v1 wishlist (item 19+)** — item admin (add/edit/delete catalog), user preferences, color themes, backup/export/import, accounts/cloud sync, login, accessibility pass. See v1 `App.tsx` future to-dos. Trip bags (optional counts of Carry / Luggage / Backpack / Personal item, packing assignment) is implemented.
 
 ### Production migration (proposed, not built)
 
@@ -146,7 +146,19 @@ On refresh: upsert server items; keep `custom_*`; keep removed catalog ids that 
 
 ## User-added items and suggestion review
 
-Item-selection always shows **+ Add item** (search text pre-fills the name). The item is written to IndexedDB as `custom_*`, selected on the current trip, and tagged with that trip’s attributes so it keeps matching. Catalog sync already keeps `custom_*` rows when `/packer/catalog.json` updates.
+Item-selection shows a small primary **+** FAB (same green as Add trip on Home, `z-index` 30 so it stays above sticky section headers). The list has bottom padding so the last row is not covered. Search text still pre-fills the name.
+
+The add dialog collects the same fields a catalog item has: name, category, subcategory, type (Pack / Wear / Carry / Task), packing time (Early / Mid / Last minute / After), preferred quantity (or **N/A** for tasks — stored as `defaultCount` / trip `count` `0`), default luggage type (Carry / Luggage / Backpack / Personal item / Wear; catalog rows omit this), and tags (who, travel mode, weather, trip types). Category and subcategory are single-select pills taken from items already on the trip (no Custom, no free typing). **Add** and **Add another** stay disabled until name, category, and subcategory are set. **Add another** saves, keeps the rest of the form, and clears only the name. Tags start unselected; empty groups mean “match any trip”.
+
+## Trip bags
+
+Create/edit trip has an optional **Bags you're taking** list (type + count). Types: Carry (default packing bag), Luggage, Backpack, Personal item. Omit the section to skip bag assignment.
+
+Stored on the trip as `bags: [{ type, count }]`. Each packing row gets `bagId` like `carry:1` or `luggage:2`. New trip items default to Carry if that type exists, else the item’s default luggage type, else the first bag.
+
+Packing: if the trip has **more than one bag slot**, each item shows a dropdown (Carry, Luggage 1, Luggage 2, …). A type with count 1 is not numbered. A trip with only one bag total has no dropdown. Changing bags on Edit remaps existing `bagId`s (overflow slots clamp down; removed types fall back to Carry). Clone copies bags and assignments.
+
+The item is written to IndexedDB as `custom_*`, selected on the current trip. Catalog sync already keeps `custom_*` rows when `/packer/catalog.json` updates.
 
 A copy of the name is POSTed to `/packer/api/suggest-item.php` (fire-and-forget; packing still works if PHP is down or you are on webpack-dev-server). Suggestions are **not** MySQL. They append to JSON at `{public_html}/packer-data/suggestions.json` (sibling of `packer/`, so a full folder replace of `packer/` does not wipe them). Same name is counted, not duplicated. Max 80 characters, 3000 unique names.
 

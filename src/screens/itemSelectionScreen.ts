@@ -10,6 +10,8 @@ import {
 } from "../services/itemService";
 import { showToast } from "../components/toast";
 import { suggestItemToServer } from "../services/suggestionService";
+import { openAddItemDialog, AddItemDialogHandle } from "../components/addItemDialog";
+import { luggageLabel } from "../utils/customItem";
 import { Trip, TripItem } from "../utils/types";
 import { initAutoHideOnScroll, getPageScrollTop, setPageScrollTop, AutoHideChromeHandle } from "../utils/scrollChrome";
 
@@ -19,13 +21,16 @@ let searchQuery: string = "";
 let tripId: string = "";
 let tripGlobal: Trip | null = null;
 let chromeHandle: AutoHideChromeHandle | null = null;
-let addOverlay: HTMLElement | null = null;
+let addDialog: AddItemDialogHandle | null = null;
+let addFab: HTMLButtonElement | null = null;
 
 export function teardownItemSelectionScreen(): void {
   chromeHandle?.destroy();
   chromeHandle = null;
-  addOverlay?.remove();
-  addOverlay = null;
+  addDialog?.close();
+  addDialog = null;
+  addFab?.remove();
+  addFab = null;
 }
 
 export async function renderItemSelectionScreen(container: HTMLElement, id: string): Promise<void> {
@@ -64,7 +69,7 @@ function renderUI(
   chromeHandle = null;
 
   container.innerHTML = `
-    <div class="screen item-selection-screen">
+    <div class="screen item-selection-screen item-selection-screen--fab-pad">
       <div class="header">
         <div class="pane-inner">
           <button class="header__back" id="back-btn">←</button>
@@ -103,16 +108,11 @@ function renderUI(
       <div id="items-list">
         ${renderItemsList(filtered)}
       </div>
-
-      <div class="add-item-bar">
-        <button class="btn btn--secondary btn--full" id="start-add-item-btn">
-          ${q.length >= 1 ? `+ Add “${escHtml(q)}”` : "+ Add item"}
-        </button>
-      </div>
     </div>
   `;
 
   bindEvents(container, tripName);
+  mountAddFab(container, tripName);
   if (opts.searchCaret !== undefined) restoreSearchFocus(container, opts.searchCaret);
   if (opts.scrollTop !== undefined) setPageScrollTop(opts.scrollTop);
 
@@ -128,7 +128,7 @@ function currentScrollTop(_container: HTMLElement): number {
 
 function renderItemsList(items: TripItemWithMeta[]): string {
   if (items.length === 0) {
-    return `<div class="empty-state"><div class="empty-state__icon">🔍</div><div class="empty-state__title">No items found</div><div class="empty-state__subtitle">Add it with the button below</div></div>`;
+    return `<div class="empty-state"><div class="empty-state__icon">🔍</div><div class="empty-state__title">No items found</div><div class="empty-state__subtitle">Add it with the + button</div></div>`;
   }
 
   const groups = new Map<string, TripItemWithMeta[]>();
@@ -171,6 +171,14 @@ function renderItemsList(items: TripItemWithMeta[]): string {
 
 function renderItemRow(ti: TripItemWithMeta): string {
   const typeIcon = { PACK: "🎒", WEAR: "👔", CARRY: "✋", TODO: "✅" }[ti.item.type] || "";
+  const bag = luggageLabel(ti.item.luggage);
+  const qty = ti.count < 1
+    ? `<span class="item-row__na">N/A</span>`
+    : `<div class="stepper">
+          <button class="stepper__btn" data-dec="${ti.itemId}" ${ti.count <= 1 ? "disabled" : ""}>−</button>
+          <span class="stepper__value" id="count-${ti.itemId}">${ti.count}</span>
+          <button class="stepper__btn" data-inc="${ti.itemId}">+</button>
+        </div>`;
   return `
     <div class="item-row item-row--selectable" data-item-id="${ti.itemId}" data-check-row="${ti.itemId}">
       <div class="checkbox-wrap">
@@ -181,14 +189,11 @@ function renderItemRow(ti: TripItemWithMeta): string {
         <div class="item-row__meta">
           <span class="item-row__type">${typeIcon} ${ti.item.type}</span>
           <span class="badge badge--muted">${ti.item.stage}</span>
+          ${bag ? `<span class="badge badge--muted">${escHtml(bag)}</span>` : ""}
         </div>
       </div>
       <div class="item-row__actions" data-stepper-area>
-        <div class="stepper">
-          <button class="stepper__btn" data-dec="${ti.itemId}" ${ti.count <= 1 ? "disabled" : ""}>−</button>
-          <span class="stepper__value" id="count-${ti.itemId}">${ti.count}</span>
-          <button class="stepper__btn" data-inc="${ti.itemId}">+</button>
-        </div>
+        ${qty}
       </div>
     </div>
   `;
@@ -324,81 +329,46 @@ function bindEvents(container: HTMLElement, tripName: string): void {
       }
     });
   });
+}
 
-  container.querySelector("#start-add-item-btn")?.addEventListener("click", () => {
-    openAddItemDialog(container, tripName, searchQuery.trim());
+function mountAddFab(container: HTMLElement, tripName: string): void {
+  addFab?.remove();
+  const fab = document.createElement("button");
+  fab.className = "fab fab--sm";
+  fab.id = "fab-add-item";
+  fab.title = "Add item";
+  fab.setAttribute("aria-label", "Add item");
+  fab.textContent = "+";
+  container.appendChild(fab);
+  addFab = fab;
+  fab.addEventListener("click", () => {
+    openAddDialog(container, tripName, searchQuery.trim());
   });
 }
 
-function closeAddItemDialog(): void {
-  addOverlay?.remove();
-  addOverlay = null;
-}
-
-function openAddItemDialog(container: HTMLElement, tripName: string, presetName: string): void {
+function openAddDialog(container: HTMLElement, tripName: string, presetName: string): void {
   if (!tripGlobal) return;
-  closeAddItemDialog();
-
-  const overlay = document.createElement("div");
-  overlay.className = "overlay";
-  overlay.innerHTML = `
-    <div class="overlay__dialog" role="dialog" aria-labelledby="add-item-title">
-      <div class="overlay__title" id="add-item-title">Add item</div>
-      <div class="overlay__message">Saved on this device and selected for this trip. A copy is sent as a suggestion for the shared list.</div>
-      <div class="form-field">
-        <label for="new-item-name">Item name</label>
-        <input id="new-item-name" type="text" maxlength="80" autocomplete="off" value="${escHtml(presetName)}" placeholder="e.g. Travel pillow" />
-      </div>
-      <div class="overlay__actions">
-        <button class="btn btn--secondary" style="flex:1" type="button" id="cancel-add-item">Cancel</button>
-        <button class="btn btn--primary" style="flex:1" type="button" id="confirm-add-item">Add</button>
-      </div>
-    </div>
-  `;
-  document.body.appendChild(overlay);
-  addOverlay = overlay;
-
-  const input = overlay.querySelector("#new-item-name") as HTMLInputElement;
-  input.focus();
-  input.select();
-
-  const submit = async () => {
-    const name = input.value.trim();
-    if (!name) {
-      showToast("Enter an item name");
-      input.focus();
-      return;
-    }
-    if (!tripGlobal) return;
-    const confirmBtn = overlay.querySelector("#confirm-add-item") as HTMLButtonElement;
-    confirmBtn.disabled = true;
-    try {
-      const newItem = await addCustomItemToTrip(name, tripGlobal);
+  addDialog?.close();
+  let added = false;
+  addDialog = openAddItemDialog({
+    trip: tripGlobal,
+    presetName,
+    categories: allItems.map((ti) => ti.item.category),
+    subcategories: allItems.map((ti) => ti.item.subcategory || ""),
+    onSave: async (draft) => {
+      if (!tripGlobal) return;
+      const newItem = await addCustomItemToTrip(draft, tripGlobal);
       suggestItemToServer(newItem.name, newItem.category);
       allItems = await getTripItemsWithMeta(tripId);
       searchQuery = "";
       activeCategory = displayCategory(newItem, tripGlobal);
-      closeAddItemDialog();
+      added = true;
       showToast(`“${newItem.name}” added`);
-      renderUI(container, tripName);
-    } catch (err) {
-      console.warn("Add item failed:", err);
-      confirmBtn.disabled = false;
-      showToast("Could not add item");
-    }
-  };
-
-  overlay.querySelector("#cancel-add-item")?.addEventListener("click", () => closeAddItemDialog());
-  overlay.querySelector("#confirm-add-item")?.addEventListener("click", () => { void submit(); });
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) closeAddItemDialog();
-  });
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      void submit();
-    }
-    if (e.key === "Escape") closeAddItemDialog();
+    },
+    onDone: () => {
+      addDialog = null;
+      if (added) renderUI(container, tripName);
+    },
   });
 }
 

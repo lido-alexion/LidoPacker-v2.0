@@ -26,6 +26,9 @@
     "src/utils/tripNames.ts",
     "src/utils/catalogSync.ts",
     "src/utils/suggestion.ts",
+    "src/utils/tripAttributes.ts",
+    "src/utils/customItem.ts",
+    "src/utils/tripBags.ts",
     "src/data/catalog.json",
     "src/qa/unitTests.ts"
   ]

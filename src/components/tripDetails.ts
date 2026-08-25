@@ -1,6 +1,7 @@
 import { Trip } from "../utils/types";
 import { formatDate } from "../utils/timeEngine";
 import { renderAttributeSummary } from "./attributePicker";
+import { bagsSummary } from "../utils/tripBags";
 
 export function openTripDetails(trip: Trip): void {
   document.querySelector(".overlay")?.remove();
@@ -25,6 +26,12 @@ export function openTripDetails(trip: Trip): void {
           <div class="details-row__value">${escHtml(dates)}</div>
         </div>
         ${renderAttributeSummary(trip)}
+        ${bagsSummary(trip.bags) ? `
+        <div class="details-row">
+          <div class="details-row__label">Bags</div>
+          <div class="details-row__value">${escHtml(bagsSummary(trip.bags))}</div>
+        </div>
+        ` : ""}
       </div>
       <div class="overlay__actions">
         <button class="btn btn--primary btn--full" id="details-close">Close</button>

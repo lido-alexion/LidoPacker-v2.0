@@ -22,7 +22,7 @@ export async function renderCloneTripScreen(container: HTMLElement, tripId: stri
         </div>
       </div>
       <div class="create-trip-screen">
-        <div class="form-hint">Copies destination, dates, attributes, and packing items from ${escHtml(trip.name)}.</div>
+        <div class="form-hint">Copies destination, dates, attributes, bags, and packing items from ${escHtml(trip.name)}.</div>
         <div class="form-field">
           <label>New trip name</label>
           <input type="text" id="trip-name" value="${escHtml(suggested)}" maxlength="80" />

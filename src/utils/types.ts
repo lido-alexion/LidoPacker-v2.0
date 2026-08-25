@@ -12,11 +12,19 @@ export interface Item {
   subcategory?: string;
   type: ItemType;
   stage: ItemStage;
+  /** Preferred quantity. 0 means N/A (tasks that are not counted). */
   defaultCount: number;
+  /** Optional bag this item usually goes in (custom items; catalog rows omit it). */
+  luggage?: string;
   travellers?: string[];
   weathers?: string[];
   vehicles?: string[];
   types?: string[];
+}
+
+export interface TripBag {
+  type: string;
+  count: number;
 }
 
 export interface Trip {
@@ -32,6 +40,8 @@ export interface Trip {
   vehicles?: string[];
   weathers?: string[];
   types?: string[];
+  /** Bags taken on this trip. Empty/omitted means packing has no bag picker. */
+  bags?: TripBag[];
 }
 
 export interface TripItem {
@@ -40,6 +50,8 @@ export interface TripItem {
   count: number;
   isSelected: boolean;
   isPacked: boolean;
+  /** Packing slot, e.g. carry:1 or luggage:2. Omitted when the trip has no bags. */
+  bagId?: string;
 }
 
 export interface TripItemWithMeta extends TripItem {

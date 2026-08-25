@@ -324,7 +324,7 @@ body {
   justify-content: center;
   font-size: 28px;
   transition: all $transition-fast;
-  z-index: 20;
+  z-index: 30;
 
   &:hover {
     background: darken(#16a34a, 8%);
@@ -332,6 +332,13 @@ body {
     transform: scale(1.05);
   }
   &:active { transform: scale(0.95); }
+
+  &--sm {
+    width: 44px;
+    height: 44px;
+    font-size: 24px;
+    bottom: $space-5;
+  }
 }
 
 // ─── Checkbox ────────────────────────────────────────────────────────────────
@@ -439,6 +446,57 @@ body {
 
     &::placeholder { color: $color-text-muted; }
   }
+}
+
+.bag-rows {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+}
+
+.bag-row {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+
+  select {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+
+  input[type="number"] {
+    width: 72px;
+    flex: 0 0 72px;
+  }
+
+  &__remove {
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: none;
+    font-size: 22px;
+    line-height: 1;
+    color: $color-text-muted;
+    cursor: pointer;
+    flex-shrink: 0;
+
+    &:hover { color: $color-danger; }
+  }
+}
+
+.bag-select {
+  height: 32px;
+  max-width: 118px;
+  width: auto;
+  padding: 0 $space-2;
+  border: 1.5px solid $color-border;
+  border-radius: $radius-sm;
+  font-size: $font-size-xs;
+  font-family: $font-family;
+  color: $color-text;
+  background: $color-surface;
+  cursor: pointer;
 }
 
 .time-picker {
@@ -819,9 +877,43 @@ body {
 
 .add-item-bar {
   padding: $space-4 $space-5 $space-6;
-  position: sticky;
-  bottom: 0;
-  background: linear-gradient(transparent, $color-bg 24%);
+}
+
+.item-selection-screen--fab-pad {
+  padding-bottom: 88px;
+}
+
+.item-row__na {
+  font-size: $font-size-xs;
+  color: $color-text-muted;
+  font-weight: 600;
+}
+
+.qty-row {
+  display: flex;
+  align-items: center;
+  gap: $space-3;
+
+  input[type="number"] {
+    width: 96px;
+    flex: 0 0 auto;
+  }
+}
+
+.qty-na {
+  display: flex;
+  align-items: center;
+  gap: $space-2;
+  font-size: $font-size-sm;
+  color: $color-text;
+  cursor: pointer;
+  user-select: none;
+
+  input {
+    width: 18px;
+    height: 18px;
+    accent-color: $color-success;
+  }
 }
 
 // ─── Toast ───────────────────────────────────────────────────────────────────
@@ -1318,9 +1410,40 @@ $packing-roomy: 720px;
     padding: $space-6;
     width: 100%;
     max-width: 500px;
+    max-height: 92vh;
     display: flex;
     flex-direction: column;
     gap: $space-4;
+  }
+
+  &__dialog--add-item {
+    .overlay__body {
+      overflow-y: auto;
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: $space-4;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .overlay__actions {
+      flex-shrink: 0;
+      padding-top: $space-2;
+      border-top: 1px solid $color-border;
+    }
+
+    .overlay__actions--triple {
+      .btn {
+        flex: 1;
+        min-width: 0;
+        padding: 0 $space-3;
+      }
+    }
+
+    .form-field > label {
+      font-weight: 700;
+    }
   }
 
   &__title {
@@ -1336,6 +1459,35 @@ $packing-roomy: 720px;
   &__actions {
     display: flex;
     gap: $space-3;
+  }
+}
+
+.item-tag-fields {
+  display: flex;
+  flex-direction: column;
+  gap: $space-5;
+  margin-top: $space-2;
+  padding-top: $space-5;
+  border-top: 1px solid $color-border;
+
+  &__title {
+    font-size: $font-size-md;
+    font-weight: 700;
+    color: $color-text;
+  }
+
+  .form-hint {
+    margin-top: -$space-3;
+  }
+
+  .form-field {
+    gap: $space-3;
+
+    label {
+      font-size: $font-size-base;
+      font-weight: 700;
+      color: $color-text;
+    }
   }
 }
 

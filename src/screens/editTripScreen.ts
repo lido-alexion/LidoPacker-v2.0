@@ -1,4 +1,4 @@
-import { Trip } from "../utils/types";
+import { Trip, TripBag } from "../utils/types";
 import { tripsDB } from "../db/database";
 import { router } from "../utils/router";
 import { showToast } from "../components/toast";
@@ -10,7 +10,7 @@ import {
   toTimeInputValue,
 } from "../utils/timeEngine";
 import { scheduleNotifications } from "../services/notificationService";
-import { getSelectedCount, replaceTripItems } from "../services/itemService";
+import { getSelectedCount, replaceTripItems, reassignTripItemBags } from "../services/itemService";
 import { TripAttributes } from "../utils/tripAttributes";
 import {
   applyAttributes,
@@ -21,6 +21,8 @@ import {
 } from "../components/attributePicker";
 import { isTripNameTaken } from "../utils/tripNames";
 import { bindTimePicker, renderTimePicker } from "../components/timePicker";
+import { bindBagFields, renderBagFields } from "../components/bagPicker";
+import { normalizeTripBags, validateTripBags } from "../utils/tripBags";
 
 export async function renderEditTripScreen(container: HTMLElement, tripId: string): Promise<void> {
   container.innerHTML = `<div class="screen"><div class="loading"><div class="loading__spinner"></div></div></div>`;
@@ -31,6 +33,7 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
   const selectedCount = await getSelectedCount(tripId);
   const locked = selectedCount > 0;
   let attrs: TripAttributes = attributesFromTrip(trip);
+  let bags: TripBag[] = normalizeTripBags(trip.bags);
 
   const startDate = toDateInputValue(trip.startTime);
   const startTime = toTimeInputValue(trip.startTime);
@@ -39,7 +42,7 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
 
   // Snapshot of the form's initial values, used to keep "Save Changes"
   // disabled until the traveller actually edits something.
-  const initialSnapshot = formSnapshot(trip.name, trip.location, startDate, startTime, endDate, endTime, attrs);
+  const initialSnapshot = formSnapshot(trip.name, trip.location, startDate, startTime, endDate, endTime, attrs, bags);
 
   container.innerHTML = `
     <div class="screen">
@@ -75,6 +78,7 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
           ${renderTimePicker("trip-end-time", endTime)}
         </div>
         <div id="attr-host"></div>
+        <div id="bag-host"></div>
         ${locked ? `<button type="button" class="btn btn--secondary btn--full" id="remove-items-btn">🧹 Remove all items to edit tags</button>` : ""}
         <div id="form-error" class="form-error" style="display:none"></div>
         <button class="btn btn--primary btn--full" id="save-btn" disabled>Save Changes</button>
@@ -86,7 +90,7 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
   const saveBtn = container.querySelector("#save-btn") as HTMLButtonElement;
 
   const refreshSaveState = (): void => {
-    const dirty = initialSnapshot !== currentFormSnapshot(container, attrs);
+    const dirty = initialSnapshot !== currentFormSnapshot(container, attrs, bags);
     saveBtn.disabled = !dirty;
   };
 
@@ -95,6 +99,12 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
     bindAttributeFields(attrHost, () => attrs, (next) => { attrs = next; drawAttrs(); refreshSaveState(); }, locked);
   };
   drawAttrs();
+  const bagHost = container.querySelector("#bag-host") as HTMLElement;
+  const drawBags = () => {
+    bagHost.innerHTML = renderBagFields(bags);
+    bindBagFields(bagHost, () => bags, (next) => { bags = next; drawBags(); refreshSaveState(); });
+  };
+  drawBags();
   bindTimePicker(container, "trip-start-time");
   bindTimePicker(container, "trip-end-time");
 
@@ -149,6 +159,8 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
       const attrErr = validateAttributes(attrs);
       if (attrErr) { showError(errEl, attrErr); return; }
     }
+    const bagErr = validateTripBags(bags);
+    if (bagErr) { showError(errEl, bagErr); return; }
 
     const startTime = combineDateAndTime(startDateVal, startTimeVal);
     if (!startTime) { showError(errEl, "Invalid departure date."); return; }
@@ -164,6 +176,9 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
     if (endTime) updated.endTime = endTime;
     else delete updated.endTime;
     if (!locked) updated = applyAttributes(updated, attrs);
+    const packedBags = normalizeTripBags(bags);
+    if (packedBags.length) updated.bags = packedBags;
+    else delete updated.bags;
 
     const validation = validateTrip(updated);
     if (validation) { showError(errEl, validation); return; }
@@ -174,6 +189,7 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
 
     await tripsDB.put(updated);
     if (!locked) await replaceTripItems(updated);
+    else await reassignTripItemBags(updated);
     await scheduleNotifications(updated);
     showToast("Trip updated");
     router.navigate({ name: "home" }, { replace: true });
@@ -195,7 +211,8 @@ function formSnapshot(
   startTime: string,
   endDate: string,
   endTime: string,
-  attrs: TripAttributes
+  attrs: TripAttributes,
+  bags: TripBag[]
 ): string {
   return JSON.stringify({
     name: name.trim(),
@@ -208,10 +225,11 @@ function formSnapshot(
     vehicles: [...attrs.vehicles].sort(),
     weathers: [...attrs.weathers].sort(),
     types: [...attrs.types].sort(),
+    bags: normalizeTripBags(bags),
   });
 }
 
-function currentFormSnapshot(container: HTMLElement, attrs: TripAttributes): string {
+function currentFormSnapshot(container: HTMLElement, attrs: TripAttributes, bags: TripBag[]): string {
   const val = (id: string) => (container.querySelector(`#${id}`) as HTMLInputElement)?.value ?? "";
   return formSnapshot(
     val("trip-name"),
@@ -220,7 +238,8 @@ function currentFormSnapshot(container: HTMLElement, attrs: TripAttributes): str
     val("trip-start-time"),
     val("trip-end-date"),
     val("trip-end-time"),
-    attrs
+    attrs,
+    bags
   );
 }
 

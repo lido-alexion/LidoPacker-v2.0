@@ -1,4 +1,4 @@
-import { Item, Trip } from "../utils/types";
+import { Trip } from "../utils/types";
 import {
   PERSONAS,
   VEHICLES,
@@ -141,6 +141,58 @@ export function bindAttributeFields(
         else if (group === "weathers") next = toggleWeather(current, id);
         else next = toggleType(current, id);
         setAttrs(next);
+      });
+    });
+  });
+}
+
+export function renderItemTagFields(attrs: TripAttributes): string {
+  const typeOptions = TRIP_TYPES.map((t) => ({ id: t, label: t }));
+  return `
+    <div class="item-tag-fields">
+      <div class="item-tag-fields__title">Tags</div>
+      <div class="form-hint">Choose who, how, weather and trip types this item belongs to. Leave a group empty to match any trip.</div>
+      <div class="form-field" data-item-attr-group="travellers">
+        <label>Who is this for?</label>
+        ${chipRow(PERSONAS, attrs.travellers)}
+      </div>
+      <div class="form-field" data-item-attr-group="vehicles">
+        <label>Travel mode</label>
+        ${chipRow(VEHICLES, attrs.vehicles)}
+      </div>
+      <div class="form-field" data-item-attr-group="weathers">
+        <label>Weather</label>
+        ${chipRow(WEATHERS, attrs.weathers)}
+      </div>
+      <div class="form-field" data-item-attr-group="types">
+        <label>Trip types</label>
+        ${chipRow(typeOptions, attrs.types)}
+      </div>
+    </div>
+  `;
+}
+
+export function bindItemTagFields(
+  container: HTMLElement,
+  getAttrs: () => TripAttributes,
+  setAttrs: (next: TripAttributes) => void
+): void {
+  container.querySelectorAll<HTMLElement>("[data-item-attr-group]").forEach((field) => {
+    const group = field.dataset.itemAttrGroup!;
+    field.querySelectorAll<HTMLButtonElement>("[data-chip]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.dataset.chip!;
+        const current = getAttrs();
+        const list =
+          group === "travellers" ? current.travellers
+          : group === "vehicles" ? current.vehicles
+          : group === "weathers" ? current.weathers
+          : current.types;
+        const nextList = toggleValue(list, id, !list.includes(id));
+        if (group === "travellers") setAttrs({ ...current, travellers: nextList });
+        else if (group === "vehicles") setAttrs({ ...current, vehicles: nextList });
+        else if (group === "weathers") setAttrs({ ...current, weathers: nextList });
+        else setAttrs({ ...current, types: nextList });
       });
     });
   });

@@ -15,6 +15,11 @@ import { showToast } from "../components/toast";
 import { checkMissedItems } from "../services/notificationService";
 import { Trip, TripItem, TripPhase } from "../utils/types";
 import { initAutoHideOnScroll, getPageScrollTop, setPageScrollTop, AutoHideChromeHandle } from "../utils/scrollChrome";
+import {
+  bagSlots,
+  packingBagSelectNeeded,
+  resolvedItemBagId,
+} from "../utils/tripBags";
 
 type PackingMode = "all" | "last-minute" | "forgot";
 
@@ -287,6 +292,7 @@ function renderPackingList(items: TripItemWithMeta[]): string {
 function renderPackingItemRow(ti: TripItemWithMeta): string {
   const isPhaseMatch = ti.item.stage === phase;
   const typeIcon = { PACK: "🎒", WEAR: "👔", CARRY: "✋", TODO: "✅" }[ti.item.type] || "";
+  const bagControl = renderBagControl(ti);
 
   return `
     <div class="item-row item-row--selectable ${ti.isPacked ? "item-row--packed" : ""}" data-pack-item="${ti.itemId}">
@@ -301,6 +307,20 @@ function renderPackingItemRow(ti: TripItemWithMeta): string {
           ${ti.count > 1 ? `<span class="badge badge--muted">×${ti.count}</span>` : ""}
         </div>
       </div>
+      ${bagControl}
+    </div>
+  `;
+}
+
+function renderBagControl(ti: TripItemWithMeta): string {
+  if (!tripGlobal || !packingBagSelectNeeded(tripGlobal.bags)) return "";
+  const slots = bagSlots(tripGlobal.bags);
+  const current = resolvedItemBagId(ti.item, tripGlobal, ti.bagId) || slots[0].id;
+  return `
+    <div class="item-row__actions" data-bag-area>
+      <select class="bag-select" data-bag="${ti.itemId}" aria-label="Bag">
+        ${slots.map((s) => `<option value="${escHtml(s.id)}"${s.id === current ? " selected" : ""}>${escHtml(s.label)}</option>`).join("")}
+      </select>
     </div>
   `;
 }
@@ -363,11 +383,23 @@ function bindPackingEvents(container: HTMLElement, tripName: string, startTime: 
 
   container.querySelectorAll("[data-pack-item]").forEach((row) => {
     row.addEventListener("click", (e) => {
-      if ((e.target as HTMLElement).closest("input")) return;
+      if ((e.target as HTMLElement).closest("input, select, [data-bag-area]")) return;
       const cb = row.querySelector("input[data-pack]") as HTMLInputElement | null;
       if (!cb) return;
       cb.checked = !cb.checked;
       cb.dispatchEvent(new Event("change"));
+    });
+  });
+
+  container.querySelectorAll<HTMLSelectElement>("[data-bag]").forEach((sel) => {
+    sel.addEventListener("click", (e) => e.stopPropagation());
+    sel.addEventListener("change", async (e) => {
+      e.stopPropagation();
+      const itemId = sel.dataset.bag!;
+      const ti = allItems.find((i) => i.itemId === itemId);
+      if (!ti) return;
+      ti.bagId = sel.value;
+      await tripItemsDB.put(ti as TripItem);
     });
   });
 

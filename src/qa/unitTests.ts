@@ -8,6 +8,8 @@ import { displayCategory, itemMatchesTrip } from "../utils/tripFilter";
 import { isTripNameTaken, uniqueCloneName } from "../utils/tripNames";
 import { isCatalogNewer, mergeCatalogItems, parseCatalogFile, remapLegacyBaseItems, typeAndStageForV1Category } from "../utils/catalogSync";
 import { sanitiseSuggestionName, SUGGESTION_NAME_MAX } from "../utils/suggestion";
+import { buildCustomItem, luggageLabel, tripItemCountFor, uniqueExistingLabels } from "../utils/customItem";
+import { bagSlots, coerceBagId, defaultBagId, packingBagSelectNeeded } from "../utils/tripBags";
 import { Item, Trip, TripItem } from "../utils/types";
 import catalogFile from "../data/catalog.json";
 
@@ -112,8 +114,10 @@ assert(validateTrip({
   endTime: "2026-08-23",
 }) !== null, "date-only end before start invalid");
 assert(validateItem({ id: "i", name: "X", category: "C", type: "PACK", stage: "MID", defaultCount: 1 }) === null, "valid item");
-assert(validateItem({ id: "i", name: "X", category: "C", type: "PACK", stage: "MID", defaultCount: 0 }) !== null, "count < 1");
+assert(validateItem({ id: "i", name: "X", category: "C", type: "TODO", stage: "EARLY", defaultCount: 0 }) === null, "item count 0 is N/A");
+assert(validateItem({ id: "i", name: "X", category: "C", type: "PACK", stage: "MID", defaultCount: -1 }) !== null, "item count negative invalid");
 assert(validateTripItem({ tripId: "t", itemId: "i", count: 2, isSelected: true, isPacked: false }) === null, "valid trip item");
+assert(validateTripItem({ tripId: "t", itemId: "i", count: 0, isSelected: true, isPacked: false }) === null, "trip item count 0 is N/A");
 
 // --- Router paths ---
 assert(normalizePath("/trips/abc/") === "/trips/abc", "normalize trailing slash");
@@ -308,6 +312,57 @@ assert(
   ).toPut.some((i) => i.id === "custom_user_pillow"),
   "catalog refresh keeps user-added custom items"
 );
+
+const customTask = buildCustomItem({
+  name: "  Charge  camera  ",
+  category: "ToDos",
+  subcategory: "Essentials",
+  type: "TODO",
+  stage: "EARLY",
+  defaultCount: 0,
+  luggage: "",
+  travellers: ["man"],
+  vehicles: [],
+  weathers: [],
+  types: ["Essentials"],
+}, "custom_test_task");
+assert(customTask.name === "Charge camera", "custom item sanitises name");
+assert(customTask.defaultCount === 0, "custom task quantity can be N/A");
+assert(customTask.luggage === undefined, "unset luggage is omitted");
+assert(customTask.vehicles === undefined, "empty tag groups are omitted");
+assert(tripItemCountFor(customTask) === 0, "trip count keeps N/A");
+assert(tripItemCountFor(catalogItem("1")) === 1, "catalog count stays at default");
+
+const customPack = buildCustomItem({
+  name: "Travel pillow",
+  category: "Miscellaneous",
+  subcategory: "Essentials",
+  type: "PACK",
+  stage: "MID",
+  defaultCount: 2,
+  luggage: "carry",
+  travellers: ["man", "woman"],
+  vehicles: ["flight"],
+  weathers: ["hot"],
+  types: ["Essentials"],
+}, "custom_test_pack");
+assert(customPack.luggage === "carry", "custom item stores luggage");
+assert(luggageLabel("carry") === "Carry", "luggage label");
+assert(luggageLabel("carry-on") === "Carry", "legacy carry-on maps to Carry");
+assert(tripItemCountFor(customPack) === 2, "preferred quantity is used on the trip");
+assert(
+  uniqueExistingLabels([" Clothing ", "Hygiene", "custom", "Clothing", "Custom", ""]).join(",") === "Clothing,Hygiene",
+  "existing labels are unique, trimmed, and drop Custom"
+);
+
+const twoCarry = bagSlots([{ type: "carry", count: 2 }, { type: "luggage", count: 1 }]);
+assert(twoCarry.map((s) => s.label).join(",") === "Carry 1,Carry 2,Luggage", "number bags only when count > 1");
+assert(packingBagSelectNeeded([{ type: "carry", count: 1 }]) === false, "single bag has no packing dropdown");
+assert(packingBagSelectNeeded([{ type: "carry", count: 2 }]) === true, "two bags show a packing dropdown");
+assert(defaultBagId([{ type: "luggage", count: 1 }, { type: "carry", count: 1 }]) === "carry:1", "default packing bag is Carry");
+assert(defaultBagId([{ type: "luggage", count: 2 }], "suitcase") === "luggage:1", "item suitcase default maps onto Luggage");
+assert(coerceBagId("carry:3", [{ type: "carry", count: 2 }]) === "carry:2", "extra Carry slot clamps down");
+assert(coerceBagId("carry:1", []) === undefined, "no trip bags clears assignment");
 
 console.log(`${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

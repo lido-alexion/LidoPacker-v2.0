@@ -16,8 +16,8 @@ export function validateItem(item: Partial<Item>): string | null {
   if (typeof item.category !== "string" || !item.category.trim()) return "Item category is required.";
   if (!item.type || !ITEM_TYPES.includes(item.type)) return "Item type is invalid.";
   if (!item.stage || !ITEM_STAGES.includes(item.stage)) return "Item stage is invalid.";
-  if (item.defaultCount == null || item.defaultCount < 1 || !Number.isFinite(item.defaultCount)) {
-    return "Item count must be at least 1.";
+  if (item.defaultCount == null || item.defaultCount < 0 || !Number.isFinite(item.defaultCount)) {
+    return "Item count must be 0 (N/A) or a positive number.";
   }
   return null;
 }
@@ -39,7 +39,7 @@ export function validateTrip(trip: Partial<Trip>): string | null {
 export function validateTripItem(ti: Partial<TripItem>): string | null {
   if (!ti.tripId) return "Trip item is missing tripId.";
   if (!ti.itemId) return "Trip item is missing itemId.";
-  if (ti.count == null || ti.count < 1 || !Number.isFinite(ti.count)) return "Count must be at least 1.";
+  if (ti.count == null || ti.count < 0 || !Number.isFinite(ti.count)) return "Count must be 0 (N/A) or a positive number.";
   if (typeof ti.isSelected !== "boolean") return "isSelected must be a boolean.";
   if (typeof ti.isPacked !== "boolean") return "isPacked must be a boolean.";
   return null;

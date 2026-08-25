@@ -1,4 +1,4 @@
-import { Trip } from "../utils/types";
+import { Trip, TripBag } from "../utils/types";
 import { tripsDB } from "../db/database";
 import { router } from "../utils/router";
 import { generateTripItems } from "../services/itemService";
@@ -19,12 +19,15 @@ import {
 } from "../components/attributePicker";
 import { isTripNameTaken } from "../utils/tripNames";
 import { bindTimePicker, renderTimePicker } from "../components/timePicker";
+import { bindBagFields, renderBagFields } from "../components/bagPicker";
+import { normalizeTripBags, validateTripBags } from "../utils/tripBags";
 
 export function renderCreateTripScreen(container: HTMLElement): void {
   const tomorrow = tomorrowDate();
   const perm = getNotificationPermissionState();
   const remindersBlocked = perm === "denied" || perm === "unsupported";
   let attrs: TripAttributes = defaultTripAttributes();
+  let bags: TripBag[] = [];
 
   container.innerHTML = `
     <div class="screen">
@@ -60,6 +63,7 @@ export function renderCreateTripScreen(container: HTMLElement): void {
           ${renderTimePicker("trip-end-time", "")}
         </div>
         <div id="attr-host"></div>
+        <div id="bag-host"></div>
         <label class="remind-row">
           <input type="checkbox" id="trip-remind" ${remindersBlocked ? "disabled" : "checked"} />
           <span>Remind me 48h before, 6h before, and at departure</span>
@@ -78,6 +82,12 @@ export function renderCreateTripScreen(container: HTMLElement): void {
     bindAttributeFields(attrHost, () => attrs, (next) => { attrs = next; drawAttrs(); }, false);
   };
   drawAttrs();
+  const bagHost = container.querySelector("#bag-host") as HTMLElement;
+  const drawBags = () => {
+    bagHost.innerHTML = renderBagFields(bags);
+    bindBagFields(bagHost, () => bags, (next) => { bags = next; drawBags(); });
+  };
+  drawBags();
   bindTimePicker(container, "trip-start-time");
   bindTimePicker(container, "trip-end-time");
 
@@ -108,6 +118,8 @@ export function renderCreateTripScreen(container: HTMLElement): void {
 
     const attrErr = validateAttributes(attrs);
     if (attrErr) { showError(errEl, attrErr); return; }
+    const bagErr = validateTripBags(bags);
+    if (bagErr) { showError(errEl, bagErr); return; }
 
     if (!startDateVal) { showError(errEl, "Please set a departure date."); return; }
     const startTime = combineDateAndTime(startDateVal, startTimeVal);
@@ -131,6 +143,7 @@ export function renderCreateTripScreen(container: HTMLElement): void {
       }
 
       const endTime = endDateVal ? combineDateAndTime(endDateVal, endTimeVal) : "";
+      const packedBags = normalizeTripBags(bags);
       const trip: Trip = applyAttributes({
         id: `trip_${Date.now()}_${Math.random().toString(36).slice(2)}`,
         name,
@@ -138,6 +151,7 @@ export function renderCreateTripScreen(container: HTMLElement): void {
         startTime,
         timezone: getLocalTimeZone(),
         ...(endTime ? { endTime } : {}),
+        ...(packedBags.length ? { bags: packedBags } : {}),
       }, attrs);
 
       const validation = validateTrip(trip);
