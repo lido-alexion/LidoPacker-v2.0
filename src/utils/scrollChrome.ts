@@ -41,18 +41,32 @@ export function initAutoHideOnScroll(scrollEl: HTMLElement, localStages: (HTMLEl
 
   const HIDE_AT = 16; // px of scroll before the first stage starts collapsing
 
-  function apply(): void {
+  function apply(instant: boolean): void {
     const scrolled = scrollEl.scrollTop;
     let threshold = HIDE_AT;
     stages.forEach((el, i) => {
+      // Every screen re-render creates fresh stage elements (they start
+      // expanded). Reading scrollHeight above forces a layout flush, so
+      // immediately toggling the class afterward would otherwise animate a
+      // spurious expand→collapse flash on load — which, combined with the
+      // scrollTop already being restored to a scrolled position, looked
+      // like the list "jumping" every time the screen re-rendered. Applying
+      // the correct state with transitions disabled avoids that; only
+      // real scroll events (below) animate smoothly.
+      if (instant) el.style.transitionDuration = "0s";
       el.classList.toggle("chrome-collapsed", scrolled > threshold);
       threshold += heights[i];
     });
+    if (instant) {
+      requestAnimationFrame(() => {
+        stages.forEach((el) => { el.style.transitionDuration = ""; });
+      });
+    }
   }
 
-  const onScroll = () => apply();
+  const onScroll = () => apply(false);
   scrollEl.addEventListener("scroll", onScroll, { passive: true });
-  apply();
+  apply(true);
 
   return {
     destroy(): void {

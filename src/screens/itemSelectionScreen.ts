@@ -249,6 +249,11 @@ function bindEvents(container: HTMLElement, tripName: string): void {
   container.querySelectorAll<HTMLElement>("[data-check-row]").forEach((row) => {
     row.addEventListener("click", async (e) => {
       if ((e.target as HTMLElement).closest("[data-stepper-area]")) return;
+      // The row's own checkbox already has a "change" handler below; without
+      // this guard, clicking the checkbox fires both handlers (the click
+      // bubbling from the checkbox, plus its native change event), toggling
+      // selection and re-rendering twice per click.
+      if ((e.target as HTMLElement).closest("input")) return;
       const itemId = row.dataset.checkRow!;
       const ti = allItems.find((i) => i.itemId === itemId);
       if (ti) {

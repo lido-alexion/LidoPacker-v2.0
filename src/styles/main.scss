@@ -73,6 +73,13 @@ html, body {
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  // The chrome-collapse logic (see scrollChrome.ts) deliberately restores
+  // scrollTop to a value captured under the *previous* chrome layout, then
+  // re-applies that same collapsed/expanded state — a self-consistent
+  // sequence on its own. Without this, the browser's default scroll
+  // anchoring "corrects" the resulting layout shift a second time, fighting
+  // our restore and drifting scrollTop further on every re-render.
+  overflow-anchor: none;
 }
 
 // ─── Auto-hide chrome on scroll ──────────────────────────────────────────────
