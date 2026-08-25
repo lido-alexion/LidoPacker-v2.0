@@ -1,4 +1,4 @@
-const CACHE_NAME = "lidopacker-v2-cache-v3";
+const CACHE_NAME = "lidopacker-v2-cache-v6";
 const DB_NAME = "LidoPackerDB";
 const BASE = "/packer";
 const STATIC_ASSETS = [
@@ -36,6 +36,23 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
 
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
+
+  // Always revalidate the master item list so last_updated can take effect.
+  if (url.pathname === `${BASE}/catalog.json`) {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          const type = (res.headers.get("content-type") || "").toLowerCase();
+          if (res.ok && type.includes("json")) {
+            const clone = res.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(request, clone));
+          }
+          return res;
+        })
+        .catch(() => caches.match(request).then((r) => r || Promise.reject(new Error("catalog offline"))))
+    );
+    return;
+  }
 
   if (request.mode === "navigate") {
     event.respondWith(

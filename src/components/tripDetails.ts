@@ -1,5 +1,5 @@
 import { Trip } from "../utils/types";
-import { formatDate, formatTimeZoneLabel, isDateOnly } from "../utils/timeEngine";
+import { formatDate } from "../utils/timeEngine";
 import { renderAttributeSummary } from "./attributePicker";
 
 export function openTripDetails(trip: Trip): void {
@@ -24,12 +24,6 @@ export function openTripDetails(trip: Trip): void {
           <div class="details-row__label">Dates</div>
           <div class="details-row__value">${escHtml(dates)}</div>
         </div>
-        ${!isDateOnly(trip.startTime) ? `
-          <div class="details-row">
-            <div class="details-row__label">Time zone</div>
-            <div class="details-row__value">${escHtml(formatTimeZoneLabel(trip.timezone))}</div>
-          </div>
-        ` : ""}
         ${renderAttributeSummary(trip)}
       </div>
       <div class="overlay__actions">

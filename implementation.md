@@ -10,7 +10,7 @@ GitHub: `https://github.com/lido-alexion/LidoPacker-v2.0` (private, separate fro
 
 | # | Topic | Decision |
 |---|---|---|
-| 1 | Smart 669-item catalog | **Deferred** — data migration; keep tagged `BASE_ITEMS` until then |
+| 1 | Smart 669-item catalog | **Done** — `src/data/catalog.json` (v1 ids `"1"`…`"669"`) + `i_*` remap |
 | 2 | Trip attributes (who / transport / weather / types) | **Needed** |
 | 3 | Smart list from those tags | **Needed** — do not dump an unrelated full list |
 | 4 | Subcategory grouping | **Needed**, one UI level: show **subcategory as category** (no nested category→subcategory) |
@@ -21,7 +21,7 @@ GitHub: `https://github.com/lido-alexion/LidoPacker-v2.0` (private, separate fro
 | 12 | Show/hide packed items | **Needed** |
 | 13 | Lock attributes once items are selected on the trip | **Needed** — clear items first to edit tags |
 | 14 | v1 `localStorage` → IndexedDB migration | **Deferred** |
-| 15 | Dates | **Date required; time optional.** Date-only stored as `YYYY-MM-DD` (local midnight) |
+| 15 | Dates | **Date required; time optional.** Date-only stored as `YYYY-MM-DD` (local midnight). Time pickers are 12-hour with minutes **00 / 15 / 30 / 45**, period **AM then PM**. |
 | 16 | Name + location split | **Keep v2 behaviour** |
 | 17 | Header | Link **Lido Alexion** → https://www.lidoalexion.com |
 | 18 | Deploy path | **`/packer/`** |
@@ -40,9 +40,8 @@ v2 uses a single grouping key: `displayCategory = item.subcategory || item.categ
 
 ### Deferred (do not implement in this pass)
 
-1. **Smart catalog (~669 items)** — port `items-data.tsx` + migration of existing IndexedDB catalogs.
-2. **v1 localStorage import** — map trip-name keys into IndexedDB `trips` / `tripItems`.
-3. **v1 wishlist (item 19+)** — luggage on items, item admin (add/edit/delete catalog), user preferences, color themes, backup/export/import, accounts/cloud sync, login, accessibility pass. See v1 `App.tsx` future to-dos.
+1. **v1 localStorage import** — map trip-name keys into IndexedDB `trips` / `tripItems`.
+2. **v1 wishlist (item 19+)** — luggage on items, item admin (add/edit/delete catalog), user preferences, color themes, backup/export/import, accounts/cloud sync, login, accessibility pass. See v1 `App.tsx` future to-dos.
 
 ### Production migration (proposed, not built)
 
@@ -55,12 +54,12 @@ Run after IndexedDB opens, **before** the router paints Home. Catalog first so i
 | Step | Job | Idempotency key | When it no-ops |
 |---|---|---|---|
 | 0 | `initDB` + bump schema if needed (meta store) | `DB_VERSION` | Already on current version |
-| 1 | Upsert 669 catalog items; keep `custom_*` | `meta.catalogVersion` | Version already applied |
-| 2 | Remap existing v2 `tripItems` off `i_*` BASE ids | `meta.baseItemRemapVersion` | No `i_*` rows left |
+| 1 | Upsert 669 catalog items; keep `custom_*` | `meta.catalogLastUpdated` | Server/bundled date not newer |
+| 2 | Remap existing v2 `tripItems` off `i_*` BASE ids | leftover `i_*` rows | No `i_*` rows left (done inside `syncCatalog`) |
 | 3 | Copy v1 `localStorage` trips into IndexedDB | `localStorage lidopacker_v1_import` | Flag done, or no `all_trips_list` |
 | 4 | seed + `router.start` | — | Always |
 
-**1. Smart catalog.** Port `items-data.tsx` as a static module. Keep v1 numeric ids as strings (`"1"`…`"669"`) so a later trip import is a 1:1 join. Stop writing the 45 `BASE_ITEMS` (`i_tshirts`, …) on every launch.
+**1. Smart catalog.** Done: `src/data/catalog.json` (re-port with `node scripts/port-v1-catalog.js`). v1 numeric ids as strings (`"1"`…`"669"`). Catalog sync refreshes when `last_updated` is newer; `i_*` placeholders are remapped by name.
 
 - Upsert every catalog row by id. Overwrite name, tags, category, subcategory from the shipped file so tag fixes land on existing devices.
 - Preserve rows whose id starts with `custom_`.
@@ -100,14 +99,14 @@ Will not migrate: other browsers/devices, private mode, v1 data on a different h
 
 **Cutover**
 
-1. Check in ported `items-data` as TypeScript; add `catalogVersion = 1`; stop seeding `BASE_ITEMS`.
+1. Check in ported items as `src/data/catalog.json`; bump `last_updated`; catalog sync already seeds from that file.
 2. Unit-test date map, type case-fold, packed/selected, custom id, name clash.
 3. QA three profiles on staging `/packer/`: v1-only, v2-only (45 items), both (v1 keys + `LidoPackerDB`).
 4. Deploy v2 `dist/` as `/packer/` with SPA fallback. Confirm origin matches live v1.
 5. First-load toast: `Imported N trips`. Leave v1 keys in place for one release.
 6. Later release: optional wipe of `all_trips_list` and per-trip keys after a successful import flag.
 
-Flags: IndexedDB `meta.catalogVersion`, `meta.baseItemRemapVersion`; `localStorage lidopacker_v1_import` with imported/skipped counts.
+Flags: IndexedDB `meta.catalogLastUpdated`; `localStorage lidopacker_v1_import` with imported/skipped counts (trip import still deferred).
 
 Document any new deferrals here.
 
@@ -119,7 +118,31 @@ Document any new deferrals here.
 - After **Remove all items**, the matching list is regenerated from current attributes.
 - Custom items inherit the current trip’s tags so they keep matching.
 
-`BASE_ITEMS` are tagged so Beach / International / Business / weather filters are not a no-op while the 669 catalog is deferred.
+`src/data/catalog.json` is the v1 669-item catalog (numeric ids `"1"`…`"669"`), tagged the same way as v1 so Beach / International / Business / baby filters are not a no-op.
+
+## Master item catalog (server → IndexedDB)
+
+There is no item API. The server list is static file **`/packer/catalog.json`** (built from `src/data/catalog.json`). Re-port from v1 with `node scripts/port-v1-catalog.js`. Shape:
+
+```json
+{ "last_updated": "2026-08-25T16:00:00.000Z", "items": [ /* 669 Item rows */ ] }
+```
+
+v1 had no `type` / `stage`. Port mapping: ToDos → `TODO`/`EARLY`; Documents (v1 typo `Documants` normalised) → `CARRY`/`LAST_MINUTE`; Clothing → `PACK`/`EARLY`; Hygiene / Health → `PACK`/`MID`; else `PACK`/`MID`. Missing `defaultCount` → 1. Untagged travellers/weathers/vehicles stay omitted.
+
+IndexedDB schema is **`DB_VERSION` 4** so devices that already opened v3 without a `meta` store still get one (v3-without-meta made catalog boot throw Storage Error). `meta` keeps `catalogLastUpdated`. Boot in `main.ts`: `initDB` then `syncCatalog` (before the router paints). Catalog sync failures are logged and do not block Home. If the server fetch fails, a newer **bundled** copy of `catalog.json` still applies so existing v2 devices pick up the 669-item list from the JS payload.
+
+| Visit | What happens |
+|---|---|
+| First (empty `items` store) | Fetch `/packer/catalog.json`. Write items + `last_updated`. If the fetch fails, seed the bundled copy. |
+| Later | Read the catalog from IndexedDB. Refresh the `items` store **only if** server (or bundled) `last_updated` is later than `meta.catalogLastUpdated`. |
+| Later, offline / fetch fail | Keep IndexedDB unless the bundled file is newer (then apply bundled). |
+
+On refresh: upsert server items; keep `custom_*`; keep removed catalog ids that a trip still references; delete unused removed catalog ids.
+
+**v2 → v1 id remap.** Devices that already ran the 45-item `i_*` catalog: match leftover `i_*` rows onto the 669 list by normalised name (aliases: T-Shirts→Polo Shirts, Soap / Body Wash→Soap, etc.). Baby-only v1 rows are not used as a match for adult placeholders. Unmatched `i_*` items become `custom_i_*` so packed state is not dropped. Existing trips are **not** filled with the full matching 669-item list (`generateTripItems` / add-missing is skipped on that remap). New trips, and **Remove all items**, generate from the full catalog. Incremental catalog adds after that remap still join existing trips as unselected.
+
+**To ship catalog edits:** change `src/data/catalog.json` **and bump `last_updated`** to a later ISO UTC timestamp (or re-run the port script and bump the date). Clients that already have the old date will not refresh if the timestamp is unchanged. You can also replace only `catalog.json` on the host (no JS rebuild) as long as `last_updated` is newer. Service worker uses network-first for that file; Apache sends `Cache-Control: no-cache`.
 
 ## Router
 
@@ -146,9 +169,27 @@ npm run build
 
 - Notification permission is requested on the click itself (before IndexedDB work). `Notification.requestPermission()` after `await` can hang in Chrome. Enable and Create both use a 12s timeout so the UI cannot freeze.
 
+## Production deploy
+
+Same GoDaddy/cPanel host as Portfolio. Serve `dist/` as `/packer/`.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy/prepare-upload.ps1
+```
+
+Upload `deploy/staging/packer/` over `public_html/packer/` (replace the whole folder, including hidden `.htaccess`). Details: [deploy/DEPLOY.md](deploy/DEPLOY.md). This release bumps the service-worker cache to `lidopacker-v2-cache-v6`.
+
+### Storage Error on the dashboard (2026-08-25)
+
+Local Chrome could show **Storage Error / Could not initialize local storage** after the 669-item catalog landed. Typical causes: IndexedDB already at version 3 without `meta`; `syncCatalog` sharing `initDB`’s try/catch so a catalog write took the app down; dev-server SPA fallback serving `index.html` as `/packer/catalog.json`. Fixes: schema 4 + create missing stores; keep Home up if catalog refresh fails; reject HTML catalog responses; do not SPA-fallback `fetch()` requests. Private browsing with storage blocked still shows Storage Error, now with the browser’s message and a Try again button.
+
 ## Design-doc pass (already done)
 
-Ranked search, select all, custom items, packing search rebind, notification UX, IndexedDB reminders, timezone, offline banner, FAB, validation, unit tests.
+Ranked search, select all, custom items, packing search rebind, notification UX, IndexedDB reminders, offline banner, FAB, validation, unit tests.
+
+Timezone is stored on trips for date math but is not shown in packing, item selection, create/edit, or trip details. Home dashboard has a small footer hint: device clock + zone name.
+
+Create/edit: Flight / Car / Bike / Others appear only under “How are you travelling?” — not again under “What are you packing for?”. Vehicle ids are still stored on `types` for catalog matching.
 
 ## GitHub issue fixes (2026-08-25)
 
@@ -156,11 +197,11 @@ Fixed `lido-alexion/LidoPacker-v2.0` issues #1, #3, #4, #6 and best-effort #2/#5
 
 | # | Issue | Fix |
 |---|---|---|
-| 1 | Scrollbar on narrow content body, dead zone on wide screens | `main.ts`: global `wheel` listener forwards scroll delta to the active `.screen` whenever the pointer is outside `#app`. Kept the existing centred-card layout (FAB/sticky headers depend on it) rather than switching to body-level scroll. |
+| 1 | Scrollbar on narrow content body, dead zone on wide screens | **Follow-up (2026-08-25):** page-level scroll on `html`/`body` so the scrollbar sits on the window. The app column (`#app`, site header, screens) is a centred 500px card — chrome bars, dividers, and lists all stay in that column (not full-bleed). FAB is `position: fixed` against the column edge. `scrollChrome.ts` listens to `window` scroll. |
 | 3 | Selecting an item scrolls the item-selection pane back to top | `itemSelectionScreen.ts` fully re-renders `innerHTML` on every toggle, which reset `scrollTop`. `renderUI` now takes `{ scrollTop }` and every mutating call site captures/restores it via `currentScrollTop()`. |
-| 4 | Item-selection categories don't match the trip's selected tags; unrelated tabs (e.g. Beach/Hiking) appear | Root cause: `displayCategory` grouped by `item.subcategory` regardless of *why* the item matched the trip (an item can carry several `types` tags but only one subcategory, e.g. Swimwear is tagged Beach+Swimming but its subcategory is "Beach"). `tripFilter.ts#displayCategory(item, trip?)` now falls back to the item's broader `category` when the subcategory is tag-driven but that specific tag wasn't selected on the trip. Threaded the optional `trip` through `itemService.ts` (`getCategories`, `fuzzySearch`) and both screens that render tabs/groups. Note: the "too few items" / "no kid or bike-specific items" part of this issue is a data-catalog gap — the 45-item `BASE_ITEMS` catalog is a placeholder for the deferred 669-item catalog port (see item 1 in the Catch-up decisions table above); not addressed here. |
+| 4 | Item-selection categories don't match the trip's selected tags; unrelated tabs (e.g. Beach/Hiking) appear | Root cause: `displayCategory` grouped by `item.subcategory` regardless of *why* the item matched the trip (an item can carry several `types` tags but only one subcategory, e.g. Swimwear is tagged Beach+Swimming but its subcategory is "Beach"). `tripFilter.ts#displayCategory(item, trip?)` now falls back to the item's broader `category` when the subcategory is tag-driven but that specific tag wasn't selected on the trip. Threaded the optional `trip` through `itemService.ts` (`getCategories`, `fuzzySearch`) and both screens that render tabs/groups. Note: the "too few items" / "no kid or bike-specific items" part of this issue was a data-catalog gap; the 669-item v1 catalog is now ported (see item 1 in the Catch-up decisions table). Baby-tagged rows still require the Baby traveller (and overlapping types) to show. |
 | 6 | Edit-trip lock message easy to miss; tags don't look disabled; no way to unlock without leaving the screen; Save always enabled | `attributePicker.ts`: lock note is now a `banner--warning` with a 🔒 icon. `main.scss`: `.attr-fieldset:disabled` greys out `.chip`/`.chip--selected` explicitly instead of relying on opacity alone. `editTripScreen.ts`: added a "Remove all items to edit tags" button (reuses `replaceTripItems`, same semantics as the home-screen "Remove all items" action) that re-renders the screen unlocked; Save Changes starts disabled and only enables once a normalised snapshot (name/location/dates/attrs, array-sorted) of the form differs from the initial one. |
-| 2, 5 | Real-estate optimisation on item-selection / packing screens | New `utils/scrollChrome.ts#initAutoHideOnScroll`: measures each "chrome" element's height once per render, then collapses them in priority order as `scrollTop` passes cumulative thresholds (global site header/offline bar first, then screen-local elements), restoring near the top. Item-selection: collapses site header, then the search/select-all toolbar; trip-name/Done bar and category tabs stay put. Packing: collapses site header, then the whole progress/mode block; also merged the old full-width "All / Last Minute / Forgot" buttons + "Show packed" row + search bar (3 stacked rows, 2 redundant divider lines) into one `.packing-controls-row` — a compact icon segmented control (`.segmented`), an inline "Show packed" checkbox, and a search icon-button that expands into the search field only while active. `main.ts#resetGlobalChrome()` runs on every navigation so a screen that doesn't use auto-hide never inherits a collapsed site header from the previous screen. Deliberately did **not** move controls into the trip-name header bar or hide it — kept primary navigation (Done/Items, trip name) always visible to limit risk, per the issues' own "if possible" / "maybe" hedging on the more elaborate suggestions. |
+| 2, 5 | Real-estate optimisation on item-selection / packing screens | ... Packing controls (follow-up): short viewports (`max-height: 719px`) keep the compact 3-icon mode switch and a search *button* that expands in-row (hiding the other controls). Taller screens show three labelled buttons (All items / Last minute / Forgot) and a persistent search field. Show-packed is an icon toggle (🙈 hidden / 👁️ shown). A second toggle (☰ / ⬇️) sinks packed rows to the bottom of each category. |
 
 Unit tests: added trip-aware `displayCategory` cases in `qa/unitTests.ts` (tag-driven subcategory only shown when its tag is selected on the trip; non-tag-driven "Essentials" bucket always shown).
 

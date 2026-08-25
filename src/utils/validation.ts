@@ -11,9 +11,9 @@ export function isValidIsoDate(value: string | undefined): boolean {
 }
 
 export function validateItem(item: Partial<Item>): string | null {
-  if (!item.id || !item.id.trim()) return "Item id is required.";
-  if (!item.name || !item.name.trim()) return "Item name is required.";
-  if (!item.category || !item.category.trim()) return "Item category is required.";
+  if (typeof item.id !== "string" || !item.id.trim()) return "Item id is required.";
+  if (typeof item.name !== "string" || !item.name.trim()) return "Item name is required.";
+  if (typeof item.category !== "string" || !item.category.trim()) return "Item category is required.";
   if (!item.type || !ITEM_TYPES.includes(item.type)) return "Item type is invalid.";
   if (!item.stage || !ITEM_STAGES.includes(item.stage)) return "Item stage is invalid.";
   if (item.defaultCount == null || item.defaultCount < 1 || !Number.isFinite(item.defaultCount)) {

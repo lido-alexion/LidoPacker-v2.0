@@ -6,6 +6,7 @@
     "lib": ["ES2020"],
     "strict": true,
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "outDir": "./.qa-out",
     "rootDir": "./src",
@@ -23,6 +24,8 @@
     "src/utils/basePath.ts",
     "src/utils/tripFilter.ts",
     "src/utils/tripNames.ts",
+    "src/utils/catalogSync.ts",
+    "src/data/catalog.json",
     "src/qa/unitTests.ts"
   ]
 }

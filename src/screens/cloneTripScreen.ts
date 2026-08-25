@@ -16,8 +16,10 @@ export async function renderCloneTripScreen(container: HTMLElement, tripId: stri
   container.innerHTML = `
     <div class="screen">
       <div class="header">
-        <button class="header__back" id="back-btn">←</button>
-        <div class="header__title">Clone trip</div>
+        <div class="pane-inner">
+          <button class="header__back" id="back-btn">←</button>
+          <div class="header__title">Clone trip</div>
+        </div>
       </div>
       <div class="create-trip-screen">
         <div class="form-hint">Copies destination, dates, attributes, and packing items from ${escHtml(trip.name)}.</div>

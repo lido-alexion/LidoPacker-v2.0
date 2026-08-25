@@ -84,10 +84,7 @@ function chipRow(options: { id: string; label: string }[], selected: string[], d
 }
 
 export function renderAttributeFields(attrs: TripAttributes, locked: boolean): string {
-  const typeOptions = [
-    ...TRIP_TYPES.map((t) => ({ id: t, label: t })),
-    ...VEHICLES.map((v) => ({ id: v.id, label: v.label })),
-  ];
+  const typeOptions = TRIP_TYPES.map((t) => ({ id: t, label: t }));
   const typeSelected = attrs.types;
   const lockNote = locked ? `
     <div class="banner banner--warning attr-lock-banner">
@@ -119,7 +116,7 @@ export function renderAttributeFields(attrs: TripAttributes, locked: boolean): s
       </div>
       <div class="form-field" data-attr-group="types">
         <label>What are you packing for?</label>
-        ${chipRow(typeOptions, typeSelected, attrs.vehicles)}
+        ${chipRow(typeOptions, typeSelected)}
       </div>
     </fieldset>
   `;

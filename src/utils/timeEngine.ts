@@ -97,7 +97,44 @@ export function toTimeInputValue(value: string | undefined): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return snapToQuarterHour(`${pad(date.getHours())}:${pad(date.getMinutes())}`);
+}
+
+const HHMM = /^(\d{1,2}):(\d{2})$/;
+
+/** Snap HH:mm to the nearest 00 / 15 / 30 / 45 minute mark. */
+export function snapToQuarterHour(hhmm: string): string {
+  const match = HHMM.exec(hhmm.trim());
+  if (!match) return "";
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (h > 23 || m > 59) return "";
+  let total = Math.round((h * 60 + m) / 15) * 15;
+  if (total >= 24 * 60) total = 0;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+}
+
+export type ClockPeriod = "AM" | "PM";
+
+export function hhmmToClockParts(hhmm: string): { hour: string; minute: string; period: ClockPeriod } | null {
+  const snapped = snapToQuarterHour(hhmm);
+  if (!snapped) return null;
+  const [h24, minute] = snapped.split(":");
+  const h = Number(h24);
+  const period: ClockPeriod = h < 12 ? "AM" : "PM";
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return { hour: String(hour12), minute, period };
+}
+
+export function clockPartsToHhmm(hour: string, minute: string, period: string): string {
+  if (!hour || !minute || (period !== "AM" && period !== "PM")) return "";
+  let h = Number(hour);
+  if (!Number.isFinite(h) || h < 1 || h > 12) return "";
+  if (period === "AM") h = h === 12 ? 0 : h;
+  else h = h === 12 ? 12 : h + 12;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(h)}:${minute}`;
 }
 
 /** Date required; empty time stores YYYY-MM-DD. With time, stores local ISO. */

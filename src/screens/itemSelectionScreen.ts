@@ -10,13 +10,19 @@ import {
 } from "../services/itemService";
 import { showToast } from "../components/toast";
 import { Trip, TripItem } from "../utils/types";
-import { initAutoHideOnScroll } from "../utils/scrollChrome";
+import { initAutoHideOnScroll, getPageScrollTop, setPageScrollTop, AutoHideChromeHandle } from "../utils/scrollChrome";
 
 let allItems: TripItemWithMeta[] = [];
 let activeCategory: string = "All";
 let searchQuery: string = "";
 let tripId: string = "";
 let tripGlobal: Trip | null = null;
+let chromeHandle: AutoHideChromeHandle | null = null;
+
+export function teardownItemSelectionScreen(): void {
+  chromeHandle?.destroy();
+  chromeHandle = null;
+}
 
 export async function renderItemSelectionScreen(container: HTMLElement, id: string): Promise<void> {
   tripId = id;
@@ -50,35 +56,44 @@ function renderUI(
   const allVisibleSelected = filtered.length > 0 && selectedCount === filtered.length;
   const q = searchQuery.trim();
 
+  chromeHandle?.destroy();
+  chromeHandle = null;
+
   container.innerHTML = `
     <div class="screen item-selection-screen">
       <div class="header">
-        <button class="header__back" id="back-btn">←</button>
-        <div class="header__title">${escHtml(tripName)}</div>
-        <button class="header__action" id="done-btn">Done</button>
+        <div class="pane-inner">
+          <button class="header__back" id="back-btn">←</button>
+          <div class="header__title">${escHtml(tripName)}</div>
+          <button class="header__action" id="done-btn">Done</button>
+        </div>
       </div>
 
       <div class="item-selection-toolbar">
-        <div class="search-bar">
-          <span class="search-bar__icon">🔍</span>
-          <input type="text" id="search-input" placeholder="Search all items…" value="${escHtml(searchQuery)}" />
-          ${searchQuery ? `<button class="search-bar__clear" id="clear-search">×</button>` : ""}
-        </div>
-        <div class="item-selection-actions">
-          <span class="item-selection-count">${filtered.length} items · ${selectedCount} selected${q ? " · all categories" : ""}</span>
-          <div class="item-selection-actions__btns">
-            <button class="text-btn" id="select-all-btn" ${allVisibleSelected || filtered.length === 0 ? "disabled" : ""}>Select all</button>
-            <button class="text-btn" id="deselect-all-btn" ${selectedCount === 0 ? "disabled" : ""}>Deselect all</button>
+        <div class="pane-inner">
+          <div class="search-bar">
+            <span class="search-bar__icon">🔍</span>
+            <input type="text" id="search-input" placeholder="Search all items…" value="${escHtml(searchQuery)}" />
+            ${searchQuery ? `<button class="search-bar__clear" id="clear-search">×</button>` : ""}
+          </div>
+          <div class="item-selection-actions">
+            <span class="item-selection-count">${filtered.length} items · ${selectedCount} selected${q ? " · all categories" : ""}</span>
+            <div class="item-selection-actions__btns">
+              <button class="text-btn" id="select-all-btn" ${allVisibleSelected || filtered.length === 0 ? "disabled" : ""}>Select all</button>
+              <button class="text-btn" id="deselect-all-btn" ${selectedCount === 0 ? "disabled" : ""}>Deselect all</button>
+            </div>
           </div>
         </div>
       </div>
 
       <div class="pill-tabs" id="category-tabs">
-        ${categories.map((cat) => `
-          <button class="pill-tabs__tab ${cat === activeCategory ? "pill-tabs__tab--active" : ""}" data-cat="${escHtml(cat)}">
-            ${escHtml(cat)} ${cat === "All" ? `(${allItems.length})` : `(${allItems.filter(ti => catFor(ti) === cat).length})`}
-          </button>
-        `).join("")}
+        <div class="pane-inner">
+          ${categories.map((cat) => `
+            <button class="pill-tabs__tab ${cat === activeCategory ? "pill-tabs__tab--active" : ""}" data-cat="${escHtml(cat)}">
+              ${escHtml(cat)} ${cat === "All" ? `(${allItems.length})` : `(${allItems.filter(ti => catFor(ti) === cat).length})`}
+            </button>
+          `).join("")}
+        </div>
       </div>
 
       <div id="items-list">
@@ -95,21 +110,16 @@ function renderUI(
 
   bindEvents(container, tripName);
   if (opts.searchCaret !== undefined) restoreSearchFocus(container, opts.searchCaret);
-  const scrollEl = container.querySelector(".screen") as HTMLElement | null;
-  if (opts.scrollTop !== undefined && scrollEl) scrollEl.scrollTop = opts.scrollTop;
+  if (opts.scrollTop !== undefined) setPageScrollTop(opts.scrollTop);
 
-  // Real-estate optimisation: collapse the site header, then the search /
-  // select-all toolbar, as the traveller scrolls down the item list.
-  if (scrollEl) {
-    const toolbar = container.querySelector(".item-selection-toolbar") as HTMLElement | null;
-    initAutoHideOnScroll(scrollEl, [toolbar]);
-  }
+  const toolbar = container.querySelector(".item-selection-toolbar") as HTMLElement | null;
+  chromeHandle = initAutoHideOnScroll([toolbar]);
 }
 
 /** Current scroll offset of the screen, so re-renders (e.g. after toggling a
  *  checkbox) don't reset the list back to the top on the user. */
-function currentScrollTop(container: HTMLElement): number {
-  return (container.querySelector(".screen") as HTMLElement | null)?.scrollTop ?? 0;
+function currentScrollTop(_container: HTMLElement): number {
+  return getPageScrollTop();
 }
 
 function renderItemsList(items: TripItemWithMeta[]): string {
