@@ -6,7 +6,6 @@ import { validateTrip } from "../utils/validation";
 import {
   combineDateAndTime,
   getLocalTimeZone,
-  formatTimeZoneLabel,
   toDateInputValue,
   toTimeInputValue,
 } from "../utils/timeEngine";
@@ -21,6 +20,7 @@ import {
   validateAttributes,
 } from "../components/attributePicker";
 import { isTripNameTaken } from "../utils/tripNames";
+import { bindTimePicker, renderTimePicker } from "../components/timePicker";
 
 export async function renderEditTripScreen(container: HTMLElement, tripId: string): Promise<void> {
   container.innerHTML = `<div class="screen"><div class="loading"><div class="loading__spinner"></div></div></div>`;
@@ -32,7 +32,6 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
   const locked = selectedCount > 0;
   let attrs: TripAttributes = attributesFromTrip(trip);
 
-  const tzLabel = formatTimeZoneLabel(trip.timezone || getLocalTimeZone());
   const startDate = toDateInputValue(trip.startTime);
   const startTime = toTimeInputValue(trip.startTime);
   const endDate = toDateInputValue(trip.endTime);
@@ -45,8 +44,10 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
   container.innerHTML = `
     <div class="screen">
       <div class="header">
-        <button class="header__back" id="back-btn">←</button>
-        <div class="header__title">Edit Trip</div>
+        <div class="pane-inner">
+          <button class="header__back" id="back-btn">←</button>
+          <div class="header__title">Edit Trip</div>
+        </div>
       </div>
       <div class="create-trip-screen">
         <div class="form-field">
@@ -63,8 +64,7 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
         </div>
         <div class="form-field">
           <label>Departure time <span class="label-optional">(optional)</span></label>
-          <input type="time" id="trip-start-time" value="${escHtml(startTime)}" />
-          <div class="form-hint">Times, if set, are in ${escHtml(tzLabel)}</div>
+          ${renderTimePicker("trip-start-time", startTime)}
         </div>
         <div class="form-field">
           <label>Return date <span class="label-optional">(optional)</span></label>
@@ -72,7 +72,7 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
         </div>
         <div class="form-field">
           <label>Return time <span class="label-optional">(optional)</span></label>
-          <input type="time" id="trip-end-time" value="${escHtml(endTime)}" />
+          ${renderTimePicker("trip-end-time", endTime)}
         </div>
         <div id="attr-host"></div>
         ${locked ? `<button type="button" class="btn btn--secondary btn--full" id="remove-items-btn">🧹 Remove all items to edit tags</button>` : ""}
@@ -95,6 +95,8 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
     bindAttributeFields(attrHost, () => attrs, (next) => { attrs = next; drawAttrs(); refreshSaveState(); }, locked);
   };
   drawAttrs();
+  bindTimePicker(container, "trip-start-time");
+  bindTimePicker(container, "trip-end-time");
 
   container.querySelector("#back-btn")?.addEventListener("click", () => router.navigate({ name: "home" }, { replace: true }));
 

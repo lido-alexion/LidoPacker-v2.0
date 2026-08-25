@@ -1,18 +1,18 @@
 import "./styles/main.scss";
 import { initDB } from "./db/database";
-import { seedBaseItems } from "./services/itemService";
+import { syncCatalog } from "./services/catalogService";
 import { router } from "./utils/router";
 import { Route } from "./utils/types";
 import { renderHomeScreen } from "./screens/homeScreen";
 import { renderCreateTripScreen } from "./screens/createTripScreen";
 import { renderEditTripScreen } from "./screens/editTripScreen";
-import { renderItemSelectionScreen } from "./screens/itemSelectionScreen";
+import { renderItemSelectionScreen, teardownItemSelectionScreen } from "./screens/itemSelectionScreen";
 import { renderPackingScreen, teardownPackingScreen } from "./screens/packingScreen";
 import { renderCloneTripScreen } from "./screens/cloneTripScreen";
 import { initNotificationRuntime } from "./services/notificationService";
 import { isOnline, onConnectivityChange } from "./utils/offline";
 import { assetPath } from "./utils/basePath";
-import { resetGlobalChrome } from "./utils/scrollChrome";
+import { resetGlobalChrome, setPageScrollTop } from "./utils/scrollChrome";
 
 const siteHeader = document.createElement("div");
 siteHeader.className = "site-header";
@@ -31,28 +31,14 @@ onConnectivityChange((online) => {
 
 const app = document.getElementById("app")!;
 
-// On wide/desktop viewports the app card is centered with empty space on
-// either side. Wheel/trackpad scrolling over that empty space used to do
-// nothing because only the inner `.screen` element scrolls. Forward wheel
-// input from anywhere on the page to the active scrollable screen so the
-// whole browser window feels scrollable, not just the narrow app column.
-document.addEventListener(
-  "wheel",
-  (e) => {
-    if (app.contains(e.target as Node)) return;
-    const scrollEl = app.querySelector(".screen") as HTMLElement | null;
-    if (!scrollEl) return;
-    scrollEl.scrollTop += e.deltaY;
-  },
-  { passive: true }
-);
-
 async function navigate(route: Route): Promise<void> {
   teardownPackingScreen();
+  teardownItemSelectionScreen();
   // Screens that auto-hide the shared header on scroll (item-selection,
   // packing) re-initialise it themselves; screens that don't should never
   // inherit a collapsed header left over from the previous screen.
   resetGlobalChrome();
+  setPageScrollTop(0);
   switch (route.name) {
     case "home":
       await renderHomeScreen(app);
@@ -77,7 +63,7 @@ async function navigate(route: Route): Promise<void> {
 
 async function main() {
   app.innerHTML = `
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px">
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:50vh;gap:16px">
       <div style="font-size:64px">🧳</div>
       <div style="font-size:24px;font-weight:800;color:#1e293b">LidoPacker</div>
       <div style="font-size:14px;color:#64748b">Loading…</div>
@@ -86,17 +72,30 @@ async function main() {
 
   try {
     await initDB();
-    await seedBaseItems();
   } catch (err) {
     console.error("DB init failed:", err);
+    const message = err instanceof Error ? err.message : String(err);
     app.innerHTML = `
-      <div style="padding:40px;text-align:center;color:#dc2626">
+      <div style="padding:40px 24px;text-align:center;color:#dc2626">
         <div style="font-size:48px">⚠️</div>
         <div style="font-size:18px;font-weight:700;margin-top:16px">Storage Error</div>
-        <div style="font-size:14px;margin-top:8px">Could not initialize local storage. Please check your browser settings.</div>
+        <div style="font-size:14px;margin-top:8px;color:#64748b">
+          Could not save trips on this device. Turn off private browsing, allow site data for this page, then try again.
+        </div>
+        <p id="storage-error-detail" style="font-size:12px;margin-top:12px;color:#94a3b8"></p>
+        <button type="button" class="btn btn--primary" id="storage-retry" style="margin-top:16px">Try again</button>
       </div>
     `;
+    const detail = document.getElementById("storage-error-detail");
+    if (detail) detail.textContent = message;
+    document.getElementById("storage-retry")?.addEventListener("click", () => location.reload());
     return;
+  }
+
+  try {
+    await syncCatalog();
+  } catch (err) {
+    console.error("Catalog sync failed:", err);
   }
 
   router.onNavigate(navigate);

@@ -1,7 +1,7 @@
 import { Trip } from "../utils/types";
 import { tripsDB, tripItemsDB } from "../db/database";
 import { router } from "../utils/router";
-import { getPhase, formatCountdown, parseTripInstant, isDateOnly } from "../utils/timeEngine";
+import { getPhase, formatCountdown, parseTripInstant, isDateOnly, formatTimeZoneLabel, getLocalTimeZone } from "../utils/timeEngine";
 import { getSelectedCount, replaceTripItems } from "../services/itemService";
 import { openTripDetails } from "../components/tripDetails";
 import { showToast } from "../components/toast";
@@ -49,8 +49,10 @@ export async function renderHomeScreen(container: HTMLElement): Promise<void> {
 
   const titlebar = `
     <div class="home-titlebar">
-      <div class="home-screen__title">Lido Pack</div>
-      <div class="home-screen__subtitle">Version 2.0.0</div>
+      <div class="pane-inner">
+        <div class="home-screen__title">Lido Pack</div>
+        <div class="home-screen__subtitle">Version 2.0.0</div>
+      </div>
     </div>
   `;
 
@@ -66,6 +68,10 @@ export async function renderHomeScreen(container: HTMLElement): Promise<void> {
     </div>
   ` : "";
 
+  const tzHint = `
+    <div class="home-tz-hint">Times use this device’s clock (${escHtml(formatTimeZoneLabel(getLocalTimeZone()))})</div>
+  `;
+
   if (active.length === 0 && ended.length === 0 && archived.length === 0) {
     screen.innerHTML = `
       ${titlebar}
@@ -76,6 +82,7 @@ export async function renderHomeScreen(container: HTMLElement): Promise<void> {
           <div class="empty-state__title">No trips yet</div>
           <div class="empty-state__subtitle">Tap + to create your first trip</div>
         </div>
+        ${tzHint}
       </div>
     `;
   } else {
@@ -102,6 +109,7 @@ export async function renderHomeScreen(container: HTMLElement): Promise<void> {
             <div class="trip-group">${archivedHtml}</div>
           </div>
         ` : ""}
+        ${tzHint}
       </div>
     `;
   }

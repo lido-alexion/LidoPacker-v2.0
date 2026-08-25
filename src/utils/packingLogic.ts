@@ -20,6 +20,19 @@ export function sortTripItems<T extends Packable>(items: T[], phase: TripPhase):
   });
 }
 
+/** Sort one category section. When `packedToBottom` is on, packed rows
+ *  sink below unpacked rows (phase order is kept inside each group). */
+export function sortCategoryItems<T extends Packable>(
+  items: T[],
+  phase: TripPhase,
+  packedToBottom: boolean
+): T[] {
+  if (!packedToBottom) return sortTripItems(items, phase);
+  const unpacked = sortTripItems(items.filter((i) => !i.isPacked), phase);
+  const packed = sortTripItems(items.filter((i) => i.isPacked), phase);
+  return [...unpacked, ...packed];
+}
+
 export function computeProgress(items: Packable[]): {
   selected: number;
   packed: number;

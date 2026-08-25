@@ -9,7 +9,7 @@ import {
 } from "../services/notificationService";
 import { showToast } from "../components/toast";
 import { validateTrip } from "../utils/validation";
-import { combineDateAndTime, getLocalTimeZone, formatTimeZoneLabel } from "../utils/timeEngine";
+import { combineDateAndTime, getLocalTimeZone } from "../utils/timeEngine";
 import { defaultTripAttributes, TripAttributes } from "../utils/tripAttributes";
 import {
   applyAttributes,
@@ -18,10 +18,10 @@ import {
   validateAttributes,
 } from "../components/attributePicker";
 import { isTripNameTaken } from "../utils/tripNames";
+import { bindTimePicker, renderTimePicker } from "../components/timePicker";
 
 export function renderCreateTripScreen(container: HTMLElement): void {
   const tomorrow = tomorrowDate();
-  const tzLabel = formatTimeZoneLabel(getLocalTimeZone());
   const perm = getNotificationPermissionState();
   const remindersBlocked = perm === "denied" || perm === "unsupported";
   let attrs: TripAttributes = defaultTripAttributes();
@@ -29,8 +29,10 @@ export function renderCreateTripScreen(container: HTMLElement): void {
   container.innerHTML = `
     <div class="screen">
       <div class="header">
-        <button class="header__back" id="back-btn">←</button>
-        <div class="header__title">New Trip</div>
+        <div class="pane-inner">
+          <button class="header__back" id="back-btn">←</button>
+          <div class="header__title">New Trip</div>
+        </div>
       </div>
       <div class="create-trip-screen">
         <div class="form-field">
@@ -47,8 +49,7 @@ export function renderCreateTripScreen(container: HTMLElement): void {
         </div>
         <div class="form-field">
           <label>Departure time <span class="label-optional">(optional)</span></label>
-          <input type="time" id="trip-start-time" />
-          <div class="form-hint">Times, if set, are in ${escHtml(tzLabel)}</div>
+          ${renderTimePicker("trip-start-time", "")}
         </div>
         <div class="form-field">
           <label>Return date <span class="label-optional">(optional)</span></label>
@@ -56,7 +57,7 @@ export function renderCreateTripScreen(container: HTMLElement): void {
         </div>
         <div class="form-field">
           <label>Return time <span class="label-optional">(optional)</span></label>
-          <input type="time" id="trip-end-time" />
+          ${renderTimePicker("trip-end-time", "")}
         </div>
         <div id="attr-host"></div>
         <label class="remind-row">
@@ -77,6 +78,8 @@ export function renderCreateTripScreen(container: HTMLElement): void {
     bindAttributeFields(attrHost, () => attrs, (next) => { attrs = next; drawAttrs(); }, false);
   };
   drawAttrs();
+  bindTimePicker(container, "trip-start-time");
+  bindTimePicker(container, "trip-end-time");
 
   container.querySelector("#back-btn")?.addEventListener("click", () => {
     router.navigate({ name: "home" }, { replace: true });

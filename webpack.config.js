@@ -45,7 +45,13 @@ module.exports = (env, argv) => {
       }),
       new CopyWebpackPlugin({
         patterns: [
-          { from: 'public', to: '.', noErrorOnMissing: true },
+          {
+            from: 'public',
+            to: '.',
+            noErrorOnMissing: true,
+            globOptions: { dot: true, ignore: ['**/.DS_Store'] },
+          },
+          { from: 'src/data/catalog.json', to: 'catalog.json' },
         ],
       }),
     ],
@@ -61,7 +67,7 @@ module.exports = (env, argv) => {
       historyApiFallback: {
         index: '/packer/index.html',
         disableDotRule: true,
-        htmlAcceptHeaders: ['text/html', 'application/xhtml+xml', '*/*'],
+        htmlAcceptHeaders: ['text/html', 'application/xhtml+xml'],
       },
       setupMiddlewares: (middlewares) => {
         middlewares.unshift({

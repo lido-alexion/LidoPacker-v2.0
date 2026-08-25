@@ -3,18 +3,18 @@ import { router } from "../utils/router";
 import {
   getTripItemsWithMeta,
   TripItemWithMeta,
-  sortTripItems,
+  sortCategoryItems,
   fuzzySearch,
   computeProgress,
   getTripPhase,
   derivePackingState,
   displayCategory,
 } from "../services/itemService";
-import { getPhaseLabel, formatCountdown, formatTimeZoneLabel, parseTripInstant } from "../utils/timeEngine";
+import { getPhaseLabel, formatCountdown, parseTripInstant } from "../utils/timeEngine";
 import { showToast } from "../components/toast";
 import { checkMissedItems } from "../services/notificationService";
 import { Trip, TripItem, TripPhase } from "../utils/types";
-import { initAutoHideOnScroll } from "../utils/scrollChrome";
+import { initAutoHideOnScroll, getPageScrollTop, setPageScrollTop, AutoHideChromeHandle } from "../utils/scrollChrome";
 
 type PackingMode = "all" | "last-minute" | "forgot";
 
@@ -27,8 +27,12 @@ let searchActive: boolean = false;
 let phase: TripPhase = "EARLY";
 let countdownInterval: ReturnType<typeof setInterval> | null = null;
 let showPacked = true;
+let packedToBottom = false;
+let chromeHandle: AutoHideChromeHandle | null = null;
 
 export function teardownPackingScreen(): void {
+  chromeHandle?.destroy();
+  chromeHandle = null;
   if (countdownInterval) {
     clearInterval(countdownInterval);
     countdownInterval = null;
@@ -94,63 +98,82 @@ function getDisplayItems(): TripItemWithMeta[] {
 
   if (searchQuery) items = fuzzySearch(items, searchQuery);
   if (!showPacked) items = items.filter((ti) => !ti.isPacked);
-  return sortTripItems(items, phase);
+  return items;
 }
 
 function renderPackingUI(container: HTMLElement, tripName: string, startTime: string, searchCaret?: number): void {
+  const savedScroll = getPageScrollTop();
+  chromeHandle?.destroy();
+  chromeHandle = null;
   const progress = computeProgress(allItems);
   const displayItems = getDisplayItems();
   const endMs = tripGlobal?.endTime ? parseTripInstant(tripGlobal.endTime) : undefined;
   const countdown = formatCountdown(parseTripInstant(startTime), endMs);
   const phaseLabel = getPhaseLabel(phase);
-  const tzLabel = formatTimeZoneLabel(tripGlobal?.timezone);
 
   const bannerHtml = getBannerHtml(phase, progress.percent);
-  const showSearchInput = searchActive || !!searchQuery;
+  const searching = searchActive || !!searchQuery;
 
   container.innerHTML = `
     <div class="screen packing-screen">
       <div class="header">
-        <button class="header__back" id="back-btn">←</button>
-        <div class="header__title">${escHtml(tripName)}</div>
-        <button class="header__action" id="edit-items-btn">Items</button>
+        <div class="pane-inner">
+          <button class="header__back" id="back-btn">←</button>
+          <div class="header__title">${escHtml(tripName)}</div>
+          <button class="header__action" id="edit-items-btn">Items</button>
+        </div>
       </div>
 
       <div class="packing-screen__sticky" id="packing-sticky">
-        <div class="packing-screen__progress-header">
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-            <span class="badge badge--${phaseBadge(phase)}">${phaseLabel}</span>
-            <span id="countdown-text" style="font-size:12px;color:var(--color-text-muted)">${countdown}</span>
-            <span class="tz-label" title="${escHtml(tzLabel)}">${escHtml(tzLabel)}</span>
-          </div>
-          <div class="packing-screen__count">
-            <span class="packing-screen__percent">${progress.percent}%</span>
-            <span style="margin-left:4px;color:var(--color-text-muted)">${progress.packed}/${progress.total}</span>
-          </div>
-        </div>
-        <div class="progress-bar">
-          <div class="progress-bar__fill" style="width:${progress.percent}%"></div>
-        </div>
-        ${bannerHtml}
-        <div class="packing-controls-row">
-          <div class="segmented" role="group" aria-label="Item view">
-            <button class="segmented__btn ${mode === "all" ? "segmented__btn--active-primary" : ""}" data-mode="all" title="All items">📋</button>
-            <button class="segmented__btn ${mode === "last-minute" ? "segmented__btn--active-danger" : ""}" data-mode="last-minute" title="Last minute">⚡</button>
-            <button class="segmented__btn ${mode === "forgot" ? "segmented__btn--active-warning" : ""}" data-mode="forgot" title="Forgot">🤔</button>
-          </div>
-          <label class="packed-toggle-inline" title="Show packed items">
-            <input type="checkbox" id="show-packed-toggle" ${showPacked ? "checked" : ""} />
-            <span>Show packed</span>
-          </label>
-          ${showSearchInput ? `
-            <div class="search-bar search-bar--compact-row">
-              <span class="search-bar__icon">🔍</span>
-              <input type="text" id="search-input" placeholder="Search…" value="${escHtml(searchQuery)}" />
-              <button class="search-bar__clear" id="clear-search" title="Close search">×</button>
+        <div class="pane-inner">
+          <div class="packing-screen__progress-header">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span class="badge badge--${phaseBadge(phase)}">${phaseLabel}</span>
+              <span id="countdown-text" style="font-size:12px;color:var(--color-text-muted)">${countdown}</span>
             </div>
-          ` : `
-            <button class="icon-btn" id="search-toggle-btn" title="Search items">🔍</button>
-          `}
+            <div class="packing-screen__count">
+              <span class="packing-screen__percent">${progress.percent}%</span>
+              <span style="margin-left:4px;color:var(--color-text-muted)">${progress.packed}/${progress.total}</span>
+            </div>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-bar__fill" style="width:${progress.percent}%"></div>
+          </div>
+          ${bannerHtml}
+          <div class="packing-controls-row${searching ? " packing-controls-row--searching" : ""}">
+            <div class="mode-btns" role="group" aria-label="Item view">
+              <button type="button" class="mode-btns__btn ${mode === "all" ? "mode-btns__btn--active-primary" : ""}" data-mode="all">All items</button>
+              <button type="button" class="mode-btns__btn ${mode === "last-minute" ? "mode-btns__btn--active-danger" : ""}" data-mode="last-minute">Last minute</button>
+              <button type="button" class="mode-btns__btn ${mode === "forgot" ? "mode-btns__btn--active-warning" : ""}" data-mode="forgot">Forgot</button>
+            </div>
+            <div class="segmented" role="group" aria-label="Item view">
+              <button type="button" class="segmented__btn ${mode === "all" ? "segmented__btn--active-primary" : ""}" data-mode="all" title="All items">📋</button>
+              <button type="button" class="segmented__btn ${mode === "last-minute" ? "segmented__btn--active-danger" : ""}" data-mode="last-minute" title="Last minute">⚡</button>
+              <button type="button" class="segmented__btn ${mode === "forgot" ? "segmented__btn--active-warning" : ""}" data-mode="forgot" title="Forgot">🤔</button>
+            </div>
+            <label class="icon-switch" title="${showPacked ? "Hide packed items" : "Show packed items"}">
+              <input type="checkbox" id="show-packed-toggle" ${showPacked ? "checked" : ""} />
+              <span class="icon-switch__ui" aria-hidden="true">
+                <span class="icon-switch__off">🙈</span>
+                <span class="icon-switch__on">👁️</span>
+              </span>
+              <span class="sr-only">Show packed items</span>
+            </label>
+            <label class="icon-switch icon-switch--accent" title="${packedToBottom ? "Keep packed items in place" : "Move packed items to the bottom of each category"}">
+              <input type="checkbox" id="packed-bottom-toggle" ${packedToBottom ? "checked" : ""} />
+              <span class="icon-switch__ui" aria-hidden="true">
+                <span class="icon-switch__off">☰</span>
+                <span class="icon-switch__on">⬇️</span>
+              </span>
+              <span class="sr-only">Move packed items to the bottom of each category</span>
+            </label>
+            <button type="button" class="icon-btn packing-search-toggle" id="search-toggle-btn" title="Search items">🔍</button>
+            <div class="search-bar packing-search-field">
+              <span class="search-bar__icon">🔍</span>
+              <input type="text" id="search-input" placeholder="Search items…" value="${escHtml(searchQuery)}" />
+              ${searching ? `<button type="button" class="search-bar__clear" id="clear-search" title="Close search">×</button>` : ""}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -171,6 +194,7 @@ function renderPackingUI(container: HTMLElement, tripName: string, startTime: st
   `;
 
   bindPackingEvents(container, tripName, startTime);
+  setPageScrollTop(savedScroll);
   if (searchCaret !== undefined) {
     const next = container.querySelector("#search-input") as HTMLInputElement | null;
     if (next) {
@@ -179,11 +203,8 @@ function renderPackingUI(container: HTMLElement, tripName: string, startTime: st
     }
   }
 
-  // Real-estate optimisation: collapse the site header, then the whole
-  // progress/mode block, as the traveller scrolls down the packing list.
-  const scrollEl = container.querySelector(".screen") as HTMLElement | null;
   const sticky = container.querySelector("#packing-sticky") as HTMLElement | null;
-  if (scrollEl) initAutoHideOnScroll(scrollEl, [sticky]);
+  chromeHandle = initAutoHideOnScroll([sticky]);
 }
 
 function getBannerHtml(phase: TripPhase, percent: number): string {
@@ -255,7 +276,7 @@ function renderPackingList(items: TripItemWithMeta[]): string {
           <span class="category-section__count">${catPacked}/${catItems.length}</span>
         </div>
         <div class="card" style="border-radius:0;box-shadow:none">
-          ${catItems.map(renderPackingItemRow).join("")}
+          ${sortCategoryItems(catItems, phase, packedToBottom).map(renderPackingItemRow).join("")}
         </div>
       </div>
     `;
@@ -334,6 +355,12 @@ function bindPackingEvents(container: HTMLElement, tripName: string, startTime: 
     renderPackingUI(container, tripName, startTime);
   });
 
+  const bottomToggle = container.querySelector("#packed-bottom-toggle") as HTMLInputElement | null;
+  bottomToggle?.addEventListener("change", () => {
+    packedToBottom = bottomToggle.checked;
+    renderPackingUI(container, tripName, startTime);
+  });
+
   container.querySelectorAll("[data-pack-item]").forEach((row) => {
     row.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).closest("input")) return;
@@ -352,7 +379,7 @@ function bindPackingEvents(container: HTMLElement, tripName: string, startTime: 
       ti.isPacked = (cb as HTMLInputElement).checked;
       await tripItemsDB.put(ti as TripItem);
 
-      if (mode !== "all" || searchQuery || !showPacked) {
+      if (mode !== "all" || searchQuery || !showPacked || packedToBottom) {
         renderPackingUI(container, tripName, startTime);
         return;
       }
