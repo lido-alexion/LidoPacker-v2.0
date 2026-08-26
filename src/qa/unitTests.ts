@@ -4,12 +4,13 @@ import { computeProgress, derivePackingState, sortTripItems, sortCategoryItems }
 import { validateItem, validateTrip, validateTripItem } from "../utils/validation";
 import { Packable } from "../utils/packingLogic";
 import { isKnownPath, pathFor, routeFromPath, normalizePath } from "../utils/routes";
-import { displayCategory, itemMatchesTrip } from "../utils/tripFilter";
+import { displayCategory, itemMatchesTrip, categoryTabsFor, categoryPackProgress, itemCategory, itemGroupLabel, orderCategoryTabsByPackProgress, pickCategoryTab } from "../utils/tripFilter";
 import { isTripNameTaken, uniqueCloneName } from "../utils/tripNames";
-import { isCatalogNewer, mergeCatalogItems, parseCatalogFile, remapLegacyBaseItems, typeAndStageForV1Category } from "../utils/catalogSync";
+import { isCatalogNewer, mergeCatalogItems, parseCatalogFile, planLocalCustomItemDelete, remapLegacyBaseItems, typeAndStageForV1Category } from "../utils/catalogSync";
 import { sanitiseSuggestionName, SUGGESTION_NAME_MAX } from "../utils/suggestion";
-import { buildCustomItem, luggageLabel, tripItemCountFor, uniqueExistingLabels } from "../utils/customItem";
-import { bagSlots, coerceBagId, defaultBagId, packingBagSelectNeeded } from "../utils/tripBags";
+import { buildCustomItem, ITEM_TYPE_OPTIONS, itemTypesFromItems, LUGGAGE_OPTIONS, luggageLabel, tripItemCountFor, uniqueExistingLabels } from "../utils/customItem";
+import { bagSlots, bagTypeIconSvg, coerceBagId, defaultBagId, packingBagSelectForItem, packingBagSelectNeeded, packingUsesBagPills, resolvedItemBagId } from "../utils/tripBags";
+import { persistableTripItem } from "../utils/tripItemPersist";
 import { Item, Trip, TripItem } from "../utils/types";
 import catalogFile from "../data/catalog.json";
 
@@ -176,6 +177,28 @@ assert(displayCategory({ ...tee, subcategory: undefined }) === "Clothing", "disp
 assert(displayCategory(swim, defaultTrip) === "Clothing", "unselected tag-driven subcategory falls back to category");
 assert(displayCategory(swim, beachTrip) === "Beach", "selected tag-driven subcategory is kept");
 assert(displayCategory(tee, defaultTrip) === "Essentials", "non-tag-driven (generic) subcategory always shown");
+assert(itemCategory(swim) === "Clothing", "tabs use catalog category");
+assert(itemGroupLabel(swim) === "Beach", "inside a tab, items group by subcategory");
+assert(itemGroupLabel(swim, { prefixCategory: true }) === "Clothing · Beach", "search prefixes category when mixing tabs");
+assert(itemGroupLabel(tee) === "Essentials", "essentials stays a section inside Clothing");
+assert(
+  categoryTabsFor([{ item: swim }, { item: { ...tee, category: "ToDos" } }, { item: jacket }]).join(",") === "Clothing,ToDos",
+  "category tabs follow catalog order and drop duplicates"
+);
+assert(pickCategoryTab(["Hygiene", "Health"], "Health") === "Health", "keep the current category tab");
+assert(pickCategoryTab(["Hygiene", "Health"], "Foods") === "Hygiene", "fall back to the first remaining tab");
+const packRows = [
+  { isPacked: true, item: { category: "Clothing" } },
+  { isPacked: false, item: { category: "Clothing" } },
+  { isPacked: true, item: { category: "Hygiene" } },
+  { isPacked: true, item: { category: "Hygiene" } },
+  { isPacked: false, item: { category: "Documents" } },
+];
+assert(categoryPackProgress(packRows, "Clothing").packed === 1 && categoryPackProgress(packRows, "Clothing").total === 2, "category pack progress is packed/total");
+assert(
+  orderCategoryTabsByPackProgress(["Clothing", "Hygiene", "Documents"], packRows).join(",") === "Clothing,Documents,Hygiene",
+  "fully packed category pills move to the end"
+);
 
 assert(isDateOnly("2026-08-24") === true, "date-only flag");
 assert(isDateOnly("2026-08-24T10:00:00.000Z") === false, "iso not date-only");
@@ -313,6 +336,17 @@ assert(
   "catalog refresh keeps user-added custom items"
 );
 
+assert(planLocalCustomItemDelete("434", [{ tripId: "t1", itemId: "434" }]) === null, "catalog items cannot be deleted");
+assert(planLocalCustomItemDelete("custom_pillow", [])?.itemId === "custom_pillow", "empty trip rows still delete the custom item");
+assert(
+  planLocalCustomItemDelete("custom_pillow", [
+    { tripId: "t1", itemId: "custom_pillow" },
+    { tripId: "t2", itemId: "custom_pillow" },
+    { tripId: "t1", itemId: "434" },
+  ])?.tripItemKeys.map((k) => k.join("/")).join(",") === "t1/custom_pillow,t2/custom_pillow",
+  "deleting a custom item drops it from every trip"
+);
+
 const customTask = buildCustomItem({
   name: "  Charge  camera  ",
   category: "ToDos",
@@ -349,6 +383,24 @@ const customPack = buildCustomItem({
 assert(customPack.luggage === "carry", "custom item stores luggage");
 assert(luggageLabel("carry") === "Carry", "luggage label");
 assert(luggageLabel("carry-on") === "Carry", "legacy carry-on maps to Carry");
+assert(luggageLabel("luggage") === "Suitcase/Bag", "luggage type is Suitcase/Bag");
+assert(luggageLabel("todo") === "", "there is no TODO luggage label");
+assert(
+  !LUGGAGE_OPTIONS.some((o) => /todo|personal/i.test(`${o.id} ${o.label}`)),
+  "add-item luggage omits TODO and Personal item"
+);
+assert(
+  ITEM_TYPE_OPTIONS.map((o) => o.id).join(",") === "CARRY,PACK,TODO,WEAR",
+  "item type pills are CARRY, PACK, TODO, WEAR"
+);
+assert(
+  itemTypesFromItems(catalogFile.items).join(",") === "CARRY,PACK,TODO",
+  "catalog item types are CARRY, PACK, TODO"
+);
+assert(
+  itemTypesFromItems(catalogFile.items).every((t) => ITEM_TYPE_OPTIONS.some((o) => o.id === t)),
+  "every catalog type is an add-item pill"
+);
 assert(tripItemCountFor(customPack) === 2, "preferred quantity is used on the trip");
 assert(
   uniqueExistingLabels([" Clothing ", "Hygiene", "custom", "Clothing", "Custom", ""]).join(",") === "Clothing,Hygiene",
@@ -356,13 +408,45 @@ assert(
 );
 
 const twoCarry = bagSlots([{ type: "carry", count: 2 }, { type: "luggage", count: 1 }]);
-assert(twoCarry.map((s) => s.label).join(",") === "Carry 1,Carry 2,Luggage", "number bags only when count > 1");
-assert(packingBagSelectNeeded([{ type: "carry", count: 1 }]) === false, "single bag has no packing dropdown");
-assert(packingBagSelectNeeded([{ type: "carry", count: 2 }]) === true, "two bags show a packing dropdown");
+assert(twoCarry.map((s) => s.label).join(",") === "Carry 1,Carry 2,Suitcase/Bag", "number bags only when count > 1");
+assert(packingBagSelectNeeded([{ type: "carry", count: 1 }]) === true, "single bag still shows a packing picker");
+assert(packingUsesBagPills([{ type: "carry", count: 1 }]) === true, "single bag uses an icon pill");
+assert(packingBagSelectNeeded([{ type: "carry", count: 2 }]) === true, "two bags show a packing picker");
+assert(packingUsesBagPills([{ type: "carry", count: 2 }, { type: "luggage", count: 3 }]) === true, "five bags keep icon pills");
+assert(packingUsesBagPills([{ type: "carry", count: 2 }, { type: "luggage", count: 4 }]) === false, "six bags use a packing dropdown");
+assert(packingBagSelectForItem({ type: "PACK" }, [{ type: "carry", count: 2 }]) === true, "pack items keep a bag picker");
+assert(packingBagSelectForItem({ type: "TODO" }, [{ type: "carry", count: 2 }]) === false, "task items have no packing bag picker");
 assert(defaultBagId([{ type: "luggage", count: 1 }, { type: "carry", count: 1 }]) === "carry:1", "default packing bag is Carry");
-assert(defaultBagId([{ type: "luggage", count: 2 }], "suitcase") === "luggage:1", "item suitcase default maps onto Luggage");
+assert(defaultBagId([{ type: "luggage", count: 2 }], "suitcase") === "luggage:1", "item suitcase default maps onto Suitcase/Bag");
+assert(defaultBagId([{ type: "carry", count: 2 }], "todo") === "carry:1", "unknown luggage defaults to Carry");
+assert(defaultBagId([{ type: "luggage", count: 1 }], "carry") === "luggage:1", "missing Carry falls through to the next bag");
+assert(defaultBagId([{ type: "carry", count: 2 }], "") === "carry:1", "catalog items with no luggage default to Carry 1");
 assert(coerceBagId("carry:3", [{ type: "carry", count: 2 }]) === "carry:2", "extra Carry slot clamps down");
 assert(coerceBagId("carry:1", []) === undefined, "no trip bags clears assignment");
+assert(coerceBagId("carry:1", [{ type: "carry", count: 2 }], "todo") === "carry:1", "unknown luggage does not drop a valid bag assignment");
+assert(bagTypeIconSvg("carry").includes("#dc2626"), "Carry icon is red filled");
+assert(bagTypeIconSvg("luggage").includes("#1e3a8a"), "Suitcase/Bag icon is dark blue filled");
+assert(bagTypeIconSvg("backpack").includes("#e85d3a"), "Backpack icon is orange");
+assert(bagTypeIconSvg("carry") !== bagTypeIconSvg("luggage"), "Carry and Suitcase/Bag icons differ");
+assert(bagTypeIconSvg("backpack") !== bagTypeIconSvg("luggage"), "Backpack and Suitcase/Bag icons differ");
+assert(bagTypeIconSvg("luggage").includes("<svg"), "Suitcase/Bag has an svg icon");
+assert(
+  resolvedItemBagId({ type: "PACK", luggage: "carry" }, { bags: [{ type: "carry", count: 1 }, { type: "luggage", count: 1 }] }, "luggage:1") === "luggage:1",
+  "stored bag assignment is kept even when it is not the item default"
+);
+const unpackedRow = persistableTripItem({
+  tripId: "t1",
+  itemId: "i1",
+  count: 2,
+  isSelected: true,
+  isPacked: false,
+  bagId: "luggage:1",
+  item: catalogItem("1"),
+});
+assert(unpackedRow.bagId === "luggage:1", "bag assignment is persisted when the item is not packed");
+assert(unpackedRow.isPacked === false, "persisting a bag does not mark the item packed");
+assert(!("item" in unpackedRow), "catalog item is not written onto the trip-item row");
+assert(unpackedRow.count === 2 && unpackedRow.isSelected === true, "selection and count stay on the trip-item row");
 
 console.log(`${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

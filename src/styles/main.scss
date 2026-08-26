@@ -420,6 +420,10 @@ body {
   flex-direction: column;
   gap: $space-2;
 
+  &[hidden] {
+    display: none;
+  }
+
   label {
     font-size: $font-size-sm;
     font-weight: 500;
@@ -485,6 +489,76 @@ body {
   }
 }
 
+.bag-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: 148px;
+}
+
+.bag-pill {
+  position: relative;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1.5px solid $color-border;
+  border-radius: $radius-sm;
+  background: $color-surface;
+  color: $color-text-muted;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+
+  &:hover {
+    border-color: $color-primary;
+    color: $color-text;
+  }
+
+  &--selected {
+    border-color: $color-primary;
+    background: rgba(0, 207, 255, 0.16);
+    color: $color-text;
+  }
+
+  &__icon {
+    width: 20px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    svg {
+      width: 20px;
+      height: 22px;
+      display: block;
+    }
+  }
+
+  &__num {
+    position: absolute;
+    right: -3px;
+    bottom: -3px;
+    min-width: 14px;
+    height: 14px;
+    padding: 0 3px;
+    border-radius: $radius-full;
+    background: $color-text;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  &--selected &__num {
+    background: $color-success;
+  }
+}
+
 .bag-select {
   height: 32px;
   max-width: 118px;
@@ -500,14 +574,181 @@ body {
 }
 
 .time-picker {
-  display: flex;
-  gap: $space-2;
+  width: 100%;
 
-  select {
-    width: auto;
-    flex: 1;
-    min-width: 0;
+  &__field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-3;
+    height: 46px;
+    padding: 0 $space-4;
+    border: 1.5px solid $color-border;
+    border-radius: $radius-sm;
+    font-size: $font-size-base;
+    font-family: $font-family;
+    color: $color-text;
+    background: $color-surface;
+    outline: none;
+    width: 100%;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color $transition-fast;
+
+    &:focus {
+      border-color: $color-success;
+      box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+    }
+  }
+
+  &__value--empty {
+    color: $color-text-muted;
+  }
+
+  &__icon {
+    display: flex;
+    color: $color-text-muted;
+    flex-shrink: 0;
+  }
+}
+
+.overlay__dialog--time {
+  gap: $space-5;
+}
+
+.time-clock-readout {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: $space-1;
+  font-variant-numeric: tabular-nums;
+
+  &__part {
+    min-width: 72px;
+    height: 56px;
     padding: 0 $space-3;
+    border: none;
+    border-radius: $radius-sm;
+    background: #f0f0f0;
+    color: $color-text;
+    font-size: 36px;
+    font-weight: 600;
+    font-family: $font-family;
+    cursor: pointer;
+    line-height: 1;
+  }
+
+  &__part--on {
+    background: $color-success;
+    color: #fff;
+  }
+
+  &__colon {
+    font-size: 36px;
+    font-weight: 600;
+    color: $color-text;
+    padding: 0 2px;
+  }
+}
+
+.time-clock-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $space-4;
+}
+
+.time-clock {
+  --hand: 0deg;
+  width: 220px;
+  height: 220px;
+  flex-shrink: 0;
+
+  &__face {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: #f3f3f3;
+  }
+
+  &__hand {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 2px;
+    height: 62px;
+    margin-left: -1px;
+    margin-top: -62px;
+    background: $color-success;
+    transform-origin: 50% 100%;
+    transform: rotate(var(--hand));
+    border-radius: 1px;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  &__hub {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 10px;
+    height: 10px;
+    margin: -5px;
+    border-radius: 50%;
+    background: $color-success;
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  &__num {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 40px;
+    height: 40px;
+    margin: -20px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: $color-text;
+    font-size: $font-size-md;
+    font-weight: 600;
+    font-family: $font-family;
+    cursor: pointer;
+    z-index: 3;
+    transform: rotate(calc(var(--i) * 30deg)) translateY(-86px) rotate(calc(var(--i) * -30deg));
+
+    &--on {
+      background: $color-success;
+      color: #fff;
+    }
+  }
+}
+
+.time-clock-period {
+  display: flex;
+  flex-direction: row;
+  gap: $space-2;
+  flex-shrink: 0;
+
+  &__btn {
+    width: 72px;
+    height: 40px;
+    border: 1.5px solid $color-border;
+    border-radius: $radius-sm;
+    background: $color-surface;
+    color: $color-text;
+    font-size: $font-size-sm;
+    font-weight: 600;
+    font-family: $font-family;
+    cursor: pointer;
+
+    &--on {
+      background: $color-success;
+      border-color: $color-success;
+      color: #fff;
+    }
   }
 }
 
@@ -643,6 +884,9 @@ body {
 
 // ─── Category section ────────────────────────────────────────────────────────
 .category-section {
+  // 1px line so collapsed sticky headers don't merge into one bar.
+  border-bottom: 1px solid #eee;
+
   &__header {
     padding: $space-2 $space-4;
     display: flex;
@@ -652,6 +896,18 @@ body {
     position: sticky;
     top: 56px;
     z-index: 5;
+    cursor: pointer;
+    user-select: none;
+  }
+
+  &__chevron {
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 6px solid $color-primary;
+    flex-shrink: 0;
+    transition: transform $transition-fast;
   }
 
   &__title {
@@ -664,6 +920,16 @@ body {
   &__count {
     font-size: $font-size-xs;
     color: #aaa;
+  }
+
+  &--collapsed {
+    .category-section__chevron {
+      transform: rotate(-90deg);
+    }
+
+    .category-section__body {
+      display: none;
+    }
   }
 }
 
@@ -767,6 +1033,30 @@ body {
     align-items: center;
     gap: $space-2;
     flex-shrink: 0;
+
+    &--prep {
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+  }
+
+  &__delete {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: $color-danger;
+    border-radius: $radius-sm;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+
+    &:hover,
+    &:focus-visible {
+      background: $color-danger-light;
+    }
   }
 }
 
@@ -817,9 +1107,21 @@ body {
       border-color: $color-success;
     }
 
+    &--complete:not(&--active) {
+      background: #e8e8e8;
+      color: #888;
+      border-color: #d0d0d0;
+    }
+
     &:hover:not(&--active) {
       border-color: $color-success;
       color: $color-success;
+    }
+
+    &--complete:hover:not(&--active) {
+      border-color: #aaa;
+      color: #666;
+      background: #e0e0e0;
     }
   }
 }
@@ -1360,11 +1662,15 @@ $packing-roomy: 720px;
     z-index: 8;
     border-bottom: 1px solid $color-border;
 
-    .pane-inner {
+    > .pane-inner {
       padding: $space-3 $space-4;
       display: flex;
       flex-direction: column;
       gap: $space-3;
+    }
+
+    .pill-tabs {
+      border-bottom: none;
     }
   }
 

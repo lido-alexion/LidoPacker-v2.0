@@ -2,7 +2,7 @@ import { Trip } from "../utils/types";
 import { tripsDB, tripItemsDB } from "../db/database";
 import { router } from "../utils/router";
 import { getPhase, formatCountdown, parseTripInstant, isDateOnly, formatTimeZoneLabel, getLocalTimeZone } from "../utils/timeEngine";
-import { getSelectedCount, replaceTripItems } from "../services/itemService";
+import { getSelectedCount, persistableTripItem, replaceTripItems } from "../services/itemService";
 import { openTripDetails } from "../components/tripDetails";
 import { showToast } from "../components/toast";
 import {
@@ -273,7 +273,7 @@ function openTripMenu(trip: Trip, anchor: HTMLElement, container: HTMLElement): 
       if (action === "details") openTripDetails(trip);
       if (action === "unpack") {
         const items = await tripItemsDB.getByTrip(trip.id);
-        await Promise.all(items.map((ti) => tripItemsDB.put({ ...ti, isPacked: false })));
+        await Promise.all(items.map((ti) => tripItemsDB.put(persistableTripItem({ ...ti, isPacked: false }))));
         showToast("All items unpacked");
         renderHomeScreen(container);
       }

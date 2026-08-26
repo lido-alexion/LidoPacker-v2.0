@@ -4,17 +4,22 @@ import { getPhase, parseTripInstant } from "../utils/timeEngine";
 import { fuzzySearchByText } from "../utils/search";
 import { validateTripItem } from "../utils/validation";
 import { computeProgress, derivePackingState, sortTripItems, sortCategoryItems } from "../utils/packingLogic";
-import { displayCategory, itemMatchesTrip } from "../utils/tripFilter";
+import { displayCategory, itemMatchesTrip, categoryTabsFor } from "../utils/tripFilter";
 import { buildCustomItem, CustomItemDraft, tripItemCountFor } from "../utils/customItem";
-import { coerceBagId, defaultBagId, normalizeTripBags } from "../utils/tripBags";
+import { normalizeTripBags, resolvedItemBagId } from "../utils/tripBags";
+import { persistableTripItem } from "../utils/tripItemPersist";
+import { isCustomItemId, planLocalCustomItemDelete } from "../utils/catalogSync";
 
 export type { TripItemWithMeta };
 export { computeProgress, derivePackingState, sortTripItems, sortCategoryItems, displayCategory };
+export { persistableTripItem };
+
+export async function saveTripItem(ti: TripItem | TripItemWithMeta): Promise<void> {
+  await tripItemsDB.put(persistableTripItem(ti));
+}
 
 function tripItemRow(trip: Trip, item: Item, selected: boolean, packed = false, bagId?: string): TripItem {
-  const resolved = bagId
-    ? coerceBagId(bagId, trip.bags, item.luggage)
-    : defaultBagId(trip.bags, item.luggage);
+  const resolved = resolvedItemBagId(item, trip, bagId);
   const ti: TripItem = {
     tripId: trip.id,
     itemId: item.id,
@@ -56,12 +61,12 @@ export async function getTripItemsWithMeta(tripId: string): Promise<TripItemWith
     .filter((ti) => ti.item != null);
 }
 
-export function fuzzySearch(items: TripItemWithMeta[], query: string, trip?: Trip): TripItemWithMeta[] {
-  return fuzzySearchByText(items, query, (ti) => [ti.item.name, ti.item.category, displayCategory(ti.item, trip)]);
+export function fuzzySearch(items: TripItemWithMeta[], query: string): TripItemWithMeta[] {
+  return fuzzySearchByText(items, query, (ti) => [ti.item.name, ti.item.category, ti.item.subcategory || ""]);
 }
 
-export function getCategories(items: TripItemWithMeta[], trip?: Trip): string[] {
-  return [...new Set(items.map((ti) => displayCategory(ti.item, trip)))].sort();
+export function getCategories(items: TripItemWithMeta[]): string[] {
+  return categoryTabsFor(items);
 }
 
 export async function addCustomItemToTrip(draft: CustomItemDraft, trip: Trip): Promise<Item> {
@@ -71,18 +76,43 @@ export async function addCustomItemToTrip(draft: CustomItemDraft, trip: Trip): P
   return item;
 }
 
+/** Removes a user-added item from this device only. Does not touch server suggestions. */
+export async function deleteLocalCustomItem(itemId: string): Promise<boolean> {
+  const rows = await tripItemsDB.getByItemId(itemId);
+  const plan = planLocalCustomItemDelete(itemId, rows);
+  if (!plan) return false;
+  await tripItemsDB.deleteMany(plan.tripItemKeys);
+  await itemsDB.delete(plan.itemId);
+  return true;
+}
+
+export { isCustomItemId };
+
 export async function reassignTripItemBags(trip: Trip): Promise<void> {
   const bags = normalizeTripBags(trip.bags);
   const rows = await getTripItemsWithMeta(trip.id);
   const next = rows.map((ti) => {
-    const { item, ...row } = ti;
-    const bagId = bags.length ? coerceBagId(row.bagId, bags, item.luggage) : undefined;
-    const updated: TripItem = { ...row };
+    const bagId = bags.length ? resolvedItemBagId(ti.item, trip, ti.bagId) : undefined;
+    const updated = persistableTripItem(ti);
     if (bagId) updated.bagId = bagId;
     else delete updated.bagId;
     return updated;
   });
   await tripItemsDB.putMany(next);
+}
+
+/** Write missing/invalid bag assignments from trip bags. A valid stored `bagId` is kept, whether or not the item is packed. */
+export async function ensureTripItemBagAssignments(trip: Trip, rows: TripItemWithMeta[]): Promise<void> {
+  const toPut: TripItem[] = [];
+  for (const ti of rows) {
+    const next = resolvedItemBagId(ti.item, trip, ti.bagId);
+    const current = ti.bagId || undefined;
+    if (next === current) continue;
+    if (next) ti.bagId = next;
+    else delete ti.bagId;
+    toPut.push(persistableTripItem(ti));
+  }
+  if (toPut.length) await tripItemsDB.putMany(toPut);
 }
 
 export function getTripPhase(trip: Trip): TripPhase {

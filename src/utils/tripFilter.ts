@@ -1,4 +1,5 @@
 import { Item, Trip } from "./types";
+import { ITEM_CATEGORIES } from "./customItem";
 
 function lower(values: string[] | undefined): string[] {
   return (values || []).map((v) => v.toLowerCase());
@@ -33,22 +34,89 @@ export function itemMatchesTrip(item: Item, trip: Trip): boolean {
   return true;
 }
 
+/** Catalog / custom-item category used as a tab (Clothing, Hygiene, ToDos, …). */
+export function itemCategory(item: Pick<Item, "category">): string {
+  return (item.category || "").trim() || "Miscellaneous";
+}
+
+/** Grouping header inside a category tab. */
+export function itemSubcategory(item: Pick<Item, "category" | "subcategory">): string {
+  const sub = item.subcategory?.trim();
+  return sub || itemCategory(item);
+}
+
+/** Section title: subcategory, or "Clothing · Beach" when mixing categories (search). */
+export function itemGroupLabel(item: Pick<Item, "category" | "subcategory">, opts?: { prefixCategory?: boolean }): string {
+  const cat = itemCategory(item);
+  const sub = itemSubcategory(item);
+  if (opts?.prefixCategory && sub !== cat) return `${cat} · ${sub}`;
+  return sub;
+}
+
+/** Tabs in catalog order, then any extra categories A–Z. */
+export function categoryTabsFor(items: { item: Pick<Item, "category"> }[]): string[] {
+  const present = new Set(items.map((row) => itemCategory(row.item)));
+  const extras = [...present]
+    .filter((cat) => !ITEM_CATEGORIES.includes(cat))
+    .sort((a, b) => a.localeCompare(b));
+  return [...ITEM_CATEGORIES.filter((cat) => present.has(cat)), ...extras];
+}
+
+export function pickCategoryTab(tabs: string[], current: string): string {
+  if (current && tabs.includes(current)) return current;
+  return tabs[0] || "";
+}
+
+/** Packed / total for one catalog category among the given trip rows. */
+export function categoryPackProgress(
+  items: { isPacked: boolean; item: Pick<Item, "category"> }[],
+  cat: string
+): { packed: number; total: number } {
+  let packed = 0;
+  let total = 0;
+  for (const row of items) {
+    if (itemCategory(row.item) !== cat) continue;
+    total++;
+    if (row.isPacked) packed++;
+  }
+  return { packed, total };
+}
+
+/** Keep catalog order, but move fully packed categories to the end. */
+export function orderCategoryTabsByPackProgress(
+  tabs: string[],
+  items: { isPacked: boolean; item: Pick<Item, "category"> }[]
+): string[] {
+  const incomplete: string[] = [];
+  const complete: string[] = [];
+  for (const cat of tabs) {
+    const { packed, total } = categoryPackProgress(items, cat);
+    if (total > 0 && packed === total) complete.push(cat);
+    else incomplete.push(cat);
+  }
+  return [...incomplete, ...complete];
+}
+
+export function groupItemsByLabel<T extends { item: Pick<Item, "category" | "subcategory"> }>(
+  items: T[],
+  prefixCategory = false
+): { label: string; items: T[] }[] {
+  const groups = new Map<string, T[]>();
+  const order: string[] = [];
+  for (const row of items) {
+    const label = itemGroupLabel(row.item, { prefixCategory });
+    if (!groups.has(label)) {
+      groups.set(label, []);
+      order.push(label);
+    }
+    groups.get(label)!.push(row);
+  }
+  return order.map((label) => ({ label, items: groups.get(label)! }));
+}
+
 /**
- * Single-level grouping: v1 subcategory when present, else category.
- *
- * An item can carry several `types` tags (e.g. Swimwear is tagged both
- * "Beach" and "Swimming") but only one `subcategory` is used as its display
- * label. Without a trip, that raw subcategory is shown (used by contexts
- * that already know the item is relevant, e.g. the packing screen).
- *
- * When a `trip` is supplied, only show the item's own subcategory label if
- * the trip actually selected that specific tag (or the subcategory is a
- * generic bucket the item has no tag for, e.g. "Essentials"). Otherwise fall
- * back to the item's broader `category` (e.g. "Clothing", "Toiletries").
- * This keeps the tabs shown while picking items limited to what the
- * traveller actually selected, instead of surfacing categories such as
- * "Beach" or "Hiking" purely because an item happened to also match on a
- * different, selected tag (e.g. "Swimming" or "Essentials").
+ * Subcategory label for a single item. Kept for search ranking and tests.
+ * List tabs use {@link itemCategory}; section headers use {@link itemGroupLabel}.
  */
 export function displayCategory(item: Item, trip?: Trip): string {
   const sub = item.subcategory && item.subcategory.trim();

@@ -1,4 +1,4 @@
-import { tripsDB, tripItemsDB } from "../db/database";
+import { tripsDB } from "../db/database";
 import { router } from "../utils/router";
 import {
   getTripItemsWithMeta,
@@ -8,18 +8,17 @@ import {
   computeProgress,
   getTripPhase,
   derivePackingState,
-  displayCategory,
+  saveTripItem,
+  ensureTripItemBagAssignments,
 } from "../services/itemService";
 import { getPhaseLabel, formatCountdown, parseTripInstant } from "../utils/timeEngine";
 import { showToast } from "../components/toast";
 import { checkMissedItems } from "../services/notificationService";
-import { Trip, TripItem, TripPhase } from "../utils/types";
+import { Trip, TripPhase } from "../utils/types";
 import { initAutoHideOnScroll, getPageScrollTop, setPageScrollTop, AutoHideChromeHandle } from "../utils/scrollChrome";
-import {
-  bagSlots,
-  packingBagSelectNeeded,
-  resolvedItemBagId,
-} from "../utils/tripBags";
+import { bindTripBagControls, renderTripBagControl } from "../components/tripBagControl";
+import { renderCategoryTabs } from "../components/categoryTabs";
+import { categoryPackProgress, categoryTabsFor, groupItemsByLabel, itemCategory, orderCategoryTabsByPackProgress, pickCategoryTab } from "../utils/tripFilter";
 
 type PackingMode = "all" | "last-minute" | "forgot";
 
@@ -34,6 +33,9 @@ let countdownInterval: ReturnType<typeof setInterval> | null = null;
 let showPacked = true;
 let packedToBottom = false;
 let chromeHandle: AutoHideChromeHandle | null = null;
+let activeCategory: string = "";
+/** Subcategory section labels the user has collapsed (session only). */
+const collapsedSections = new Set<string>();
 
 export function teardownPackingScreen(): void {
   chromeHandle?.destroy();
@@ -49,6 +51,7 @@ export async function renderPackingScreen(container: HTMLElement, tripId: string
   mode = "all";
   searchQuery = "";
   searchActive = false;
+  activeCategory = "";
 
   container.innerHTML = `<div class="screen"><div class="loading"><div class="loading__spinner"></div></div></div>`;
 
@@ -58,6 +61,7 @@ export async function renderPackingScreen(container: HTMLElement, tripId: string
   tripGlobal = trip;
   phase = getTripPhase(trip);
   allItems = await getTripItemsWithMeta(tripId);
+  await ensureTripItemBagAssignments(trip, allItems);
 
   if (allItems.filter((ti) => ti.isSelected).length === 0) {
     router.navigate({ name: "item-selection", tripId }, { replace: true });
@@ -67,9 +71,8 @@ export async function renderPackingScreen(container: HTMLElement, tripId: string
   if (countdownInterval) clearInterval(countdownInterval);
 
   const progress = computeProgress(allItems);
-  await checkMissedItems(trip, progress.packed, progress.total);
-
   renderPackingUI(container, trip.name, trip.startTime);
+  void checkMissedItems(trip, progress.packed, progress.total);
 
   // Live countdown update every 30s
   countdownInterval = setInterval(async () => {
@@ -89,7 +92,7 @@ export async function renderPackingScreen(container: HTMLElement, tripId: string
   }, 30000);
 }
 
-function getDisplayItems(): TripItemWithMeta[] {
+function getModeScopeItems(): TripItemWithMeta[] {
   const derived = derivePackingState(allItems, phase);
 
   let items: TripItemWithMeta[];
@@ -102,8 +105,19 @@ function getDisplayItems(): TripItemWithMeta[] {
   }
 
   if (searchQuery) items = fuzzySearch(items, searchQuery);
-  if (!showPacked) items = items.filter((ti) => !ti.isPacked);
   return items;
+}
+
+function getModeItems(): TripItemWithMeta[] {
+  const items = getModeScopeItems();
+  if (!showPacked) return items.filter((ti) => !ti.isPacked);
+  return items;
+}
+
+function getDisplayItems(modeItems: TripItemWithMeta[]): TripItemWithMeta[] {
+  if (searchQuery.trim()) return modeItems;
+  if (!activeCategory) return modeItems;
+  return modeItems.filter((ti) => itemCategory(ti.item) === activeCategory);
 }
 
 function renderPackingUI(container: HTMLElement, tripName: string, startTime: string, searchCaret?: number): void {
@@ -111,7 +125,11 @@ function renderPackingUI(container: HTMLElement, tripName: string, startTime: st
   chromeHandle?.destroy();
   chromeHandle = null;
   const progress = computeProgress(allItems);
-  const displayItems = getDisplayItems();
+  const tabItems = getModeScopeItems();
+  const modeItems = getModeItems();
+  const tabs = orderCategoryTabsByPackProgress(categoryTabsFor(tabItems), tabItems);
+  activeCategory = pickCategoryTab(tabs, activeCategory);
+  const displayItems = getDisplayItems(modeItems);
   const endMs = tripGlobal?.endTime ? parseTripInstant(tripGlobal.endTime) : undefined;
   const countdown = formatCountdown(parseTripInstant(startTime), endMs);
   const phaseLabel = getPhaseLabel(phase);
@@ -180,6 +198,16 @@ function renderPackingUI(container: HTMLElement, tripName: string, startTime: st
             </div>
           </div>
         </div>
+        ${renderCategoryTabs(tabs, activeCategory, {
+          countFor: (cat) => {
+            const { packed, total } = categoryPackProgress(tabItems, cat);
+            return `${packed}/${total}`;
+          },
+          isComplete: (cat) => {
+            const { packed, total } = categoryPackProgress(tabItems, cat);
+            return total > 0 && packed === total;
+          },
+        })}
       </div>
 
       <div id="packing-list">
@@ -263,25 +291,23 @@ function renderPackingList(items: TripItemWithMeta[]): string {
     return `<div class="empty-state"><div class="empty-state__icon">📦</div><div class="empty-state__title">No items selected</div><div class="empty-state__subtitle">Go to Items to select what to pack</div></div>`;
   }
 
-  // Group by category
-  const groups = new Map<string, TripItemWithMeta[]>();
-  for (const item of items) {
-    const cat = displayCategory(item.item, tripGlobal || undefined);
-    if (!groups.has(cat)) groups.set(cat, []);
-    groups.get(cat)!.push(item);
-  }
+  const groups = groupItemsByLabel(items, !!searchQuery.trim());
 
   let html = "";
-  for (const [cat, catItems] of groups) {
+  for (const { label, items: catItems } of groups) {
     const catPacked = catItems.filter(ti => ti.isPacked).length;
+    const collapsed = collapsedSections.has(label);
     html += `
-      <div class="category-section">
-        <div class="category-section__header">
-          <span class="category-section__title">${escHtml(cat)}</span>
+      <div class="category-section${collapsed ? " category-section--collapsed" : ""}" data-section="${escHtml(label)}">
+        <div class="category-section__header" role="button" tabindex="0" aria-expanded="${collapsed ? "false" : "true"}" data-section-toggle="${escHtml(label)}">
+          <span class="category-section__chevron" aria-hidden="true"></span>
+          <span class="category-section__title">${escHtml(label)}</span>
           <span class="category-section__count">${catPacked}/${catItems.length}</span>
         </div>
-        <div class="card" style="border-radius:0;box-shadow:none">
-          ${sortCategoryItems(catItems, phase, packedToBottom).map(renderPackingItemRow).join("")}
+        <div class="category-section__body">
+          <div class="card" style="border-radius:0;box-shadow:none">
+            ${sortCategoryItems(catItems, phase, packedToBottom).map(renderPackingItemRow).join("")}
+          </div>
         </div>
       </div>
     `;
@@ -292,7 +318,7 @@ function renderPackingList(items: TripItemWithMeta[]): string {
 function renderPackingItemRow(ti: TripItemWithMeta): string {
   const isPhaseMatch = ti.item.stage === phase;
   const typeIcon = { PACK: "🎒", WEAR: "👔", CARRY: "✋", TODO: "✅" }[ti.item.type] || "";
-  const bagControl = renderBagControl(ti);
+  const bagControl = tripGlobal ? renderTripBagControl(ti.item, tripGlobal, ti) : "";
 
   return `
     <div class="item-row item-row--selectable ${ti.isPacked ? "item-row--packed" : ""}" data-pack-item="${ti.itemId}">
@@ -307,20 +333,7 @@ function renderPackingItemRow(ti: TripItemWithMeta): string {
           ${ti.count > 1 ? `<span class="badge badge--muted">×${ti.count}</span>` : ""}
         </div>
       </div>
-      ${bagControl}
-    </div>
-  `;
-}
-
-function renderBagControl(ti: TripItemWithMeta): string {
-  if (!tripGlobal || !packingBagSelectNeeded(tripGlobal.bags)) return "";
-  const slots = bagSlots(tripGlobal.bags);
-  const current = resolvedItemBagId(ti.item, tripGlobal, ti.bagId) || slots[0].id;
-  return `
-    <div class="item-row__actions" data-bag-area>
-      <select class="bag-select" data-bag="${ti.itemId}" aria-label="Bag">
-        ${slots.map((s) => `<option value="${escHtml(s.id)}"${s.id === current ? " selected" : ""}>${escHtml(s.label)}</option>`).join("")}
-      </select>
+      ${bagControl ? `<div class="item-row__actions">${bagControl}</div>` : ""}
     </div>
   `;
 }
@@ -369,6 +382,35 @@ function bindPackingEvents(container: HTMLElement, tripName: string, startTime: 
     });
   });
 
+  container.querySelectorAll("[data-cat]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      activeCategory = (btn as HTMLElement).dataset.cat!;
+      searchQuery = "";
+      searchActive = false;
+      setPageScrollTop(0);
+      renderPackingUI(container, tripName, startTime);
+    });
+  });
+
+  container.querySelectorAll<HTMLElement>("[data-section-toggle]").forEach((header) => {
+    const toggle = () => {
+      const label = header.dataset.sectionToggle!;
+      if (collapsedSections.has(label)) collapsedSections.delete(label);
+      else collapsedSections.add(label);
+      const section = header.closest(".category-section");
+      const collapsed = collapsedSections.has(label);
+      section?.classList.toggle("category-section--collapsed", collapsed);
+      header.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    };
+    header.addEventListener("click", toggle);
+    header.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggle();
+      }
+    });
+  });
+
   const packedToggle = container.querySelector("#show-packed-toggle") as HTMLInputElement | null;
   packedToggle?.addEventListener("change", () => {
     showPacked = packedToggle.checked;
@@ -383,7 +425,7 @@ function bindPackingEvents(container: HTMLElement, tripName: string, startTime: 
 
   container.querySelectorAll("[data-pack-item]").forEach((row) => {
     row.addEventListener("click", (e) => {
-      if ((e.target as HTMLElement).closest("input, select, [data-bag-area]")) return;
+      if ((e.target as HTMLElement).closest("input, select, button, [data-bag-area]")) return;
       const cb = row.querySelector("input[data-pack]") as HTMLInputElement | null;
       if (!cb) return;
       cb.checked = !cb.checked;
@@ -391,17 +433,7 @@ function bindPackingEvents(container: HTMLElement, tripName: string, startTime: 
     });
   });
 
-  container.querySelectorAll<HTMLSelectElement>("[data-bag]").forEach((sel) => {
-    sel.addEventListener("click", (e) => e.stopPropagation());
-    sel.addEventListener("change", async (e) => {
-      e.stopPropagation();
-      const itemId = sel.dataset.bag!;
-      const ti = allItems.find((i) => i.itemId === itemId);
-      if (!ti) return;
-      ti.bagId = sel.value;
-      await tripItemsDB.put(ti as TripItem);
-    });
-  });
+  bindTripBagControls(container, () => allItems);
 
   container.querySelectorAll("[data-pack]").forEach((cb) => {
     cb.addEventListener("change", async () => {
@@ -409,28 +441,9 @@ function bindPackingEvents(container: HTMLElement, tripName: string, startTime: 
       const ti = allItems.find((i) => i.itemId === itemId);
       if (!ti) return;
       ti.isPacked = (cb as HTMLInputElement).checked;
-      await tripItemsDB.put(ti as TripItem);
-
-      if (mode !== "all" || searchQuery || !showPacked || packedToBottom) {
-        renderPackingUI(container, tripName, startTime);
-        return;
-      }
-
-      const row = container.querySelector(`[data-pack-item="${itemId}"]`);
-      if (row) {
-        if (ti.isPacked) row.classList.add("item-row--packed");
-        else row.classList.remove("item-row--packed");
-      }
-
-      const progress = computeProgress(allItems);
-      const fill = container.querySelector(".progress-bar__fill") as HTMLElement;
-      if (fill) fill.style.width = `${progress.percent}%`;
-      const countEl = container.querySelector(".packing-screen__count");
-      if (countEl) {
-        countEl.innerHTML = `<span class="packing-screen__percent">${progress.percent}%</span><span style="margin-left:4px;color:var(--color-text-muted)">${progress.packed}/${progress.total}</span>`;
-      }
-
-      if (progress.percent === 100) {
+      await saveTripItem(ti);
+      renderPackingUI(container, tripName, startTime);
+      if (computeProgress(allItems).percent === 100) {
         showToast("All items packed! 🎉");
       }
     });

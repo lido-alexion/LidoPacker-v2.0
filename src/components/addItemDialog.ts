@@ -8,6 +8,7 @@ import {
   draftFromTrip,
   uniqueExistingLabels,
 } from "../utils/customItem";
+import { DEFAULT_BAG_TYPE } from "../utils/tripBags";
 import { bindItemTagFields, renderItemTagFields } from "./attributePicker";
 import { showToast } from "./toast";
 
@@ -19,16 +20,20 @@ function esc(str: string): string {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function radioChips(group: string, options: string[], selected: string): string {
+function radioChips(group: string, options: { id: string; label: string }[], selected: string): string {
   if (!options.length) {
     return `<div class="form-hint">No options on this trip’s items.</div>`;
   }
   return `<div class="chip-row" data-radio="${esc(group)}" role="radiogroup">
     ${options.map((opt) => {
-      const on = opt === selected;
-      return `<button type="button" class="chip${on ? " chip--selected" : ""}" role="radio" aria-checked="${on ? "true" : "false"}" data-chip="${esc(opt)}">${esc(opt)}</button>`;
+      const on = opt.id === selected;
+      return `<button type="button" class="chip${on ? " chip--selected" : ""}" role="radio" aria-checked="${on ? "true" : "false"}" data-chip="${esc(opt.id)}">${esc(opt.label)}</button>`;
     }).join("")}
   </div>`;
+}
+
+function asChips(values: string[]): { id: string; label: string }[] {
+  return values.map((v) => ({ id: v, label: v }));
 }
 
 function bindRadio(host: HTMLElement, group: string, get: () => string, set: (value: string) => void): void {
@@ -57,6 +62,9 @@ export function openAddItemDialog(opts: {
   const subcategories = uniqueExistingLabels(opts.subcategories);
   let selectedCategory = draft.category && categories.includes(draft.category) ? draft.category : "";
   let selectedSubcategory = draft.subcategory && subcategories.includes(draft.subcategory) ? draft.subcategory : "";
+  let selectedType = draft.type;
+  let selectedStage = draft.stage;
+  let selectedLuggage = draft.luggage;
   let tags: TripAttributes = {
     travellers: [...draft.travellers],
     vehicles: [...draft.vehicles],
@@ -77,23 +85,19 @@ export function openAddItemDialog(opts: {
         </div>
         <div class="form-field item-tag-fields__group">
           <label>Category</label>
-          ${radioChips("category", categories, selectedCategory)}
+          ${radioChips("category", asChips(categories), selectedCategory)}
         </div>
         <div class="form-field item-tag-fields__group">
           <label>Subcategory</label>
-          ${radioChips("subcategory", subcategories, selectedSubcategory)}
+          ${radioChips("subcategory", asChips(subcategories), selectedSubcategory)}
         </div>
-        <div class="form-field">
-          <label for="new-item-type">Item type</label>
-          <select id="new-item-type">
-            ${ITEM_TYPE_OPTIONS.map((o) => `<option value="${o.id}"${o.id === draft.type ? " selected" : ""}>${esc(o.label)}</option>`).join("")}
-          </select>
+        <div class="form-field item-tag-fields__group">
+          <label>Item type</label>
+          ${radioChips("type", ITEM_TYPE_OPTIONS, selectedType)}
         </div>
-        <div class="form-field">
-          <label for="new-item-stage">Packing time</label>
-          <select id="new-item-stage">
-            ${ITEM_STAGE_OPTIONS.map((o) => `<option value="${o.id}"${o.id === draft.stage ? " selected" : ""}>${esc(o.label)}</option>`).join("")}
-          </select>
+        <div class="form-field item-tag-fields__group">
+          <label>Packing time</label>
+          ${radioChips("stage", ITEM_STAGE_OPTIONS, selectedStage)}
         </div>
         <div class="form-field">
           <label for="new-item-count">Preferred quantity</label>
@@ -106,11 +110,9 @@ export function openAddItemDialog(opts: {
           </div>
           <div class="form-hint">Use N/A for tasks that are not counted.</div>
         </div>
-        <div class="form-field">
-          <label for="new-item-luggage">Default luggage</label>
-          <select id="new-item-luggage">
-            ${LUGGAGE_OPTIONS.map((o) => `<option value="${esc(o.id)}"${o.id === draft.luggage ? " selected" : ""}>${esc(o.label)}</option>`).join("")}
-          </select>
+        <div class="form-field item-tag-fields__group" id="new-item-luggage-wrap">
+          <label>Default luggage</label>
+          ${radioChips("luggage", LUGGAGE_OPTIONS, selectedLuggage)}
         </div>
         <div id="new-item-tags"></div>
       </div>
@@ -124,14 +126,12 @@ export function openAddItemDialog(opts: {
   document.body.appendChild(overlay);
 
   const nameInput = overlay.querySelector("#new-item-name") as HTMLInputElement;
-  const typeSelect = overlay.querySelector("#new-item-type") as HTMLSelectElement;
-  const stageSelect = overlay.querySelector("#new-item-stage") as HTMLSelectElement;
   const countInput = overlay.querySelector("#new-item-count") as HTMLInputElement;
   const naCheck = overlay.querySelector("#new-item-count-na") as HTMLInputElement;
-  const luggageSelect = overlay.querySelector("#new-item-luggage") as HTMLSelectElement;
   const tagsHost = overlay.querySelector("#new-item-tags") as HTMLElement;
   const confirmBtn = overlay.querySelector("#confirm-add-item") as HTMLButtonElement;
   const addAnotherBtn = overlay.querySelector("#add-another-item") as HTMLButtonElement;
+  const luggageWrap = overlay.querySelector("#new-item-luggage-wrap") as HTMLElement;
   const body = overlay.querySelector(".overlay__body") as HTMLElement;
 
   const drawTags = () => {
@@ -140,8 +140,34 @@ export function openAddItemDialog(opts: {
   };
   drawTags();
 
+  const setNa = (on: boolean) => {
+    naCheck.checked = on;
+    countInput.disabled = on;
+    if (on) countInput.value = "";
+    else if (!countInput.value || Number(countInput.value) < 1) countInput.value = "1";
+  };
+
   bindRadio(body, "category", () => selectedCategory, (v) => { selectedCategory = v; syncActions(); });
   bindRadio(body, "subcategory", () => selectedSubcategory, (v) => { selectedSubcategory = v; syncActions(); });
+  bindRadio(body, "type", () => selectedType, (v) => {
+    selectedType = v as CustomItemDraft["type"];
+    if (v === "TODO") {
+      setNa(true);
+      selectedLuggage = "";
+    } else {
+      if (naCheck.checked) setNa(false);
+      if (!selectedLuggage) selectedLuggage = DEFAULT_BAG_TYPE;
+    }
+    luggageWrap.hidden = v === "TODO";
+    body.querySelectorAll<HTMLButtonElement>('[data-radio="luggage"] [data-chip]').forEach((chip) => {
+      const on = (chip.dataset.chip || "") === selectedLuggage;
+      chip.classList.toggle("chip--selected", on);
+      chip.setAttribute("aria-checked", on ? "true" : "false");
+    });
+    syncActions();
+  });
+  bindRadio(body, "stage", () => selectedStage, (v) => { selectedStage = v as CustomItemDraft["stage"]; });
+  bindRadio(body, "luggage", () => selectedLuggage, (v) => { selectedLuggage = v; });
 
   const canSubmit = (): boolean => {
     if (!nameInput.value.trim() || !selectedCategory || !selectedSubcategory) return false;
@@ -155,19 +181,6 @@ export function openAddItemDialog(opts: {
     confirmBtn.disabled = !ok;
     addAnotherBtn.disabled = !ok;
   };
-
-  const setNa = (on: boolean) => {
-    naCheck.checked = on;
-    countInput.disabled = on;
-    if (on) countInput.value = "";
-    else if (!countInput.value || Number(countInput.value) < 1) countInput.value = "1";
-  };
-
-  typeSelect.addEventListener("change", () => {
-    if (typeSelect.value === "TODO") setNa(true);
-    else if (naCheck.checked) setNa(false);
-    syncActions();
-  });
   naCheck.addEventListener("change", () => {
     setNa(naCheck.checked);
     syncActions();
@@ -201,10 +214,10 @@ export function openAddItemDialog(opts: {
       name,
       category: selectedCategory,
       subcategory: selectedSubcategory,
-      type: typeSelect.value as CustomItemDraft["type"],
-      stage: stageSelect.value as CustomItemDraft["stage"],
+      type: selectedType,
+      stage: selectedStage,
       defaultCount: naCheck.checked ? 0 : qty,
-      luggage: luggageSelect.value,
+      luggage: selectedType === "TODO" ? "" : selectedLuggage,
       travellers: [...tags.travellers],
       vehicles: [...tags.vehicles],
       weathers: [...tags.weathers],

@@ -1,4 +1,4 @@
-const CACHE_NAME = "lidopacker-v2-cache-v7";
+const CACHE_NAME = "lidopacker-v2-cache-v9";
 const DB_NAME = "LidoPackerDB";
 const BASE = "/packer";
 const STATIC_ASSETS = [

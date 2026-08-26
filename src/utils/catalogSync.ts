@@ -13,6 +13,20 @@ export function isCustomItemId(id: string): boolean {
   return id.startsWith(CUSTOM_ITEM_PREFIX);
 }
 
+/** Keys to drop when the user deletes a local-only item. Catalog ids are refused. */
+export function planLocalCustomItemDelete(
+  itemId: string,
+  tripItems: { tripId: string; itemId: string }[]
+): { itemId: string; tripItemKeys: Array<[string, string]> } | null {
+  if (!isCustomItemId(itemId)) return null;
+  return {
+    itemId,
+    tripItemKeys: tripItems
+      .filter((row) => row.itemId === itemId)
+      .map((row) => [row.tripId, row.itemId]),
+  };
+}
+
 /** True when the server catalog should replace the IndexedDB copy. Missing local date always refreshes. */
 export function isCatalogNewer(
   serverLastUpdated: string,

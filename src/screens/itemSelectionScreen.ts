@@ -1,4 +1,4 @@
-import { tripsDB, tripItemsDB } from "../db/database";
+import { tripsDB } from "../db/database";
 import { router } from "../utils/router";
 import {
   getTripItemsWithMeta,
@@ -6,29 +6,41 @@ import {
   getCategories,
   fuzzySearch,
   addCustomItemToTrip,
-  displayCategory,
+  deleteLocalCustomItem,
+  isCustomItemId,
+  saveTripItem,
+  ensureTripItemBagAssignments,
 } from "../services/itemService";
 import { showToast } from "../components/toast";
 import { suggestItemToServer } from "../services/suggestionService";
 import { openAddItemDialog, AddItemDialogHandle } from "../components/addItemDialog";
+import { renderCategoryTabs } from "../components/categoryTabs";
+import { bindTripBagControls, renderTripBagControl } from "../components/tripBagControl";
 import { luggageLabel } from "../utils/customItem";
-import { Trip, TripItem } from "../utils/types";
+import { packingBagSelectForItem } from "../utils/tripBags";
+import { itemCategory, itemGroupLabel, groupItemsByLabel, pickCategoryTab } from "../utils/tripFilter";
+import { Trip } from "../utils/types";
 import { initAutoHideOnScroll, getPageScrollTop, setPageScrollTop, AutoHideChromeHandle } from "../utils/scrollChrome";
 
 let allItems: TripItemWithMeta[] = [];
-let activeCategory: string = "All";
+let activeCategory: string = "";
 let searchQuery: string = "";
 let tripId: string = "";
 let tripGlobal: Trip | null = null;
 let chromeHandle: AutoHideChromeHandle | null = null;
 let addDialog: AddItemDialogHandle | null = null;
 let addFab: HTMLButtonElement | null = null;
+let deleteOverlay: HTMLElement | null = null;
+/** Subcategory section labels the user has collapsed (session only). */
+const collapsedSections = new Set<string>();
 
 export function teardownItemSelectionScreen(): void {
   chromeHandle?.destroy();
   chromeHandle = null;
   addDialog?.close();
   addDialog = null;
+  deleteOverlay?.remove();
+  deleteOverlay = null;
   addFab?.remove();
   addFab = null;
 }
@@ -42,16 +54,20 @@ export async function renderItemSelectionScreen(container: HTMLElement, id: stri
 
   tripGlobal = trip;
   allItems = await getTripItemsWithMeta(tripId);
-  activeCategory = "All";
+  await ensureTripItemBagAssignments(trip, allItems);
+  activeCategory = pickCategoryTab(getCategories(allItems), "");
   searchQuery = "";
 
   renderUI(container, trip.name);
 }
 
-/** Item's display category for *this* trip — see `displayCategory` for why
- *  the trip matters (keeps tabs limited to what was actually selected). */
+/** Catalog category used as a tab (Clothing, Hygiene, ToDos, …). */
 function catFor(ti: TripItemWithMeta): string {
-  return displayCategory(ti.item, tripGlobal || undefined);
+  return itemCategory(ti.item);
+}
+
+function sectionLabel(ti: TripItemWithMeta): string {
+  return itemGroupLabel(ti.item, { prefixCategory: !!searchQuery.trim() });
 }
 
 function renderUI(
@@ -59,11 +75,13 @@ function renderUI(
   tripName: string,
   opts: { searchCaret?: number; scrollTop?: number } = {}
 ): void {
-  const categories = ["All", ...getCategories(allItems, tripGlobal || undefined)];
+  const categories = getCategories(allItems);
+  activeCategory = pickCategoryTab(categories, activeCategory);
+  const searching = !!searchQuery.trim();
   const filtered = getFilteredItems();
   const selectedCount = filtered.filter((ti) => ti.isSelected).length;
   const allVisibleSelected = filtered.length > 0 && selectedCount === filtered.length;
-  const q = searchQuery.trim();
+  const q = searching;
 
   chromeHandle?.destroy();
   chromeHandle = null;
@@ -95,15 +113,7 @@ function renderUI(
         </div>
       </div>
 
-      <div class="pill-tabs" id="category-tabs">
-        <div class="pane-inner">
-          ${categories.map((cat) => `
-            <button class="pill-tabs__tab ${cat === activeCategory ? "pill-tabs__tab--active" : ""}" data-cat="${escHtml(cat)}">
-              ${escHtml(cat)} ${cat === "All" ? `(${allItems.length})` : `(${allItems.filter(ti => catFor(ti) === cat).length})`}
-            </button>
-          `).join("")}
-        </div>
-      </div>
+      ${renderCategoryTabs(categories, activeCategory, (cat) => allItems.filter((ti) => catFor(ti) === cat).length)}
 
       <div id="items-list">
         ${renderItemsList(filtered)}
@@ -131,37 +141,36 @@ function renderItemsList(items: TripItemWithMeta[]): string {
     return `<div class="empty-state"><div class="empty-state__icon">🔍</div><div class="empty-state__title">No items found</div><div class="empty-state__subtitle">Add it with the + button</div></div>`;
   }
 
-  const groups = new Map<string, TripItemWithMeta[]>();
-  for (const item of items) {
-    const cat = catFor(item);
-    if (!groups.has(cat)) groups.set(cat, []);
-    groups.get(cat)!.push(item);
-  }
+  const groups = groupItemsByLabel(items, !!searchQuery.trim());
 
   let html = "";
-  for (const [cat, catItems] of groups) {
+  for (const { label, items: catItems } of groups) {
     const allSelected = catItems.every(ti => ti.isSelected);
     const someSelected = catItems.some(ti => ti.isSelected);
     const checkedAttr = allSelected ? "checked" : "";
     const indeterminate = !allSelected && someSelected ? "data-indeterminate" : "";
+    const collapsed = collapsedSections.has(label);
 
     html += `
-      <div class="category-section">
-        <div class="category-section__header">
-          <label class="cat-select-wrap">
+      <div class="category-section${collapsed ? " category-section--collapsed" : ""}" data-section="${escHtml(label)}">
+        <div class="category-section__header" role="button" tabindex="0" aria-expanded="${collapsed ? "false" : "true"}" data-section-toggle="${escHtml(label)}">
+          <span class="category-section__chevron" aria-hidden="true"></span>
+          <label class="cat-select-wrap" data-section-check>
             <input
               type="checkbox"
               class="cat-checkbox"
-              data-cat-toggle="${escHtml(cat)}"
+              data-cat-toggle="${escHtml(label)}"
               ${checkedAttr}
               ${indeterminate}
             />
           </label>
-          <span class="category-section__title">${escHtml(cat)}</span>
+          <span class="category-section__title">${escHtml(label)}</span>
           <span class="category-section__count">${catItems.filter(ti => ti.isSelected).length}/${catItems.length}</span>
         </div>
-        <div class="card card--surface" style="border-radius:0;box-shadow:none">
-          ${catItems.map(renderItemRow).join("")}
+        <div class="category-section__body">
+          <div class="card card--surface" style="border-radius:0;box-shadow:none">
+            ${catItems.map(renderItemRow).join("")}
+          </div>
         </div>
       </div>
     `;
@@ -171,7 +180,9 @@ function renderItemsList(items: TripItemWithMeta[]): string {
 
 function renderItemRow(ti: TripItemWithMeta): string {
   const typeIcon = { PACK: "🎒", WEAR: "👔", CARRY: "✋", TODO: "✅" }[ti.item.type] || "";
-  const bag = luggageLabel(ti.item.luggage);
+  const showTripBag = tripGlobal ? packingBagSelectForItem(ti.item, tripGlobal.bags) : false;
+  const bag = showTripBag ? "" : luggageLabel(ti.item.luggage);
+  const bagControl = tripGlobal ? renderTripBagControl(ti.item, tripGlobal, ti) : "";
   const qty = ti.count < 1
     ? `<span class="item-row__na">N/A</span>`
     : `<div class="stepper">
@@ -192,19 +203,23 @@ function renderItemRow(ti: TripItemWithMeta): string {
           ${bag ? `<span class="badge badge--muted">${escHtml(bag)}</span>` : ""}
         </div>
       </div>
-      <div class="item-row__actions" data-stepper-area>
-        ${qty}
+      <div class="item-row__actions item-row__actions--prep">
+        ${bagControl}
+        <div data-stepper-area>${qty}</div>
+        ${isCustomItemId(ti.itemId)
+          ? `<button type="button" class="item-row__delete" data-delete-item="${ti.itemId}" aria-label="Delete ${escHtml(ti.item.name)}" title="Delete from your list">🗑</button>`
+          : ""}
       </div>
     </div>
   `;
 }
 
 function getFilteredItems(): TripItemWithMeta[] {
-  // Global search: a query searches across every category.
+  // A query searches across every category; otherwise one catalog-category tab.
   let items = searchQuery.trim()
     ? allItems
-    : (activeCategory === "All" ? allItems : allItems.filter(ti => catFor(ti) === activeCategory));
-  if (searchQuery) items = fuzzySearch(items, searchQuery, tripGlobal || undefined);
+    : allItems.filter((ti) => catFor(ti) === activeCategory);
+  if (searchQuery) items = fuzzySearch(items, searchQuery);
   return items;
 }
 
@@ -212,7 +227,7 @@ async function setSelection(items: TripItemWithMeta[], selected: boolean, contai
   const scrollTop = currentScrollTop(container);
   for (const ti of items) {
     ti.isSelected = selected;
-    await tripItemsDB.put(ti as TripItem);
+    await saveTripItem(ti);
   }
   renderUI(container, tripName, { scrollTop });
 }
@@ -252,14 +267,37 @@ function bindEvents(container: HTMLElement, tripName: string): void {
     btn.addEventListener("click", () => {
       activeCategory = (btn as HTMLElement).dataset.cat!;
       searchQuery = "";
-      renderUI(container, tripName);
+      renderUI(container, tripName, { scrollTop: 0 });
+    });
+  });
+
+  container.querySelectorAll<HTMLElement>("[data-section-toggle]").forEach((header) => {
+    const toggle = () => {
+      const label = header.dataset.sectionToggle!;
+      if (collapsedSections.has(label)) collapsedSections.delete(label);
+      else collapsedSections.add(label);
+      const section = header.closest(".category-section");
+      const collapsed = collapsedSections.has(label);
+      section?.classList.toggle("category-section--collapsed", collapsed);
+      header.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    };
+    header.addEventListener("click", (e) => {
+      if ((e.target as HTMLElement).closest("[data-section-check]")) return;
+      toggle();
+    });
+    header.addEventListener("keydown", (e) => {
+      if ((e.target as HTMLElement).closest("[data-section-check]")) return;
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggle();
+      }
     });
   });
 
   container.querySelectorAll<HTMLInputElement>("[data-cat-toggle]").forEach((cb) => {
     cb.addEventListener("change", async () => {
       const cat = cb.dataset.catToggle!;
-      const catItems = getFilteredItems().filter(ti => catFor(ti) === cat);
+      const catItems = getFilteredItems().filter((ti) => sectionLabel(ti) === cat);
       const shouldSelect = !catItems.every(ti => ti.isSelected);
       await setSelection(catItems, shouldSelect, container, tripName);
     });
@@ -267,7 +305,7 @@ function bindEvents(container: HTMLElement, tripName: string): void {
 
   container.querySelectorAll<HTMLElement>("[data-check-row]").forEach((row) => {
     row.addEventListener("click", async (e) => {
-      if ((e.target as HTMLElement).closest("[data-stepper-area]")) return;
+      if ((e.target as HTMLElement).closest("[data-stepper-area], [data-bag-area], [data-delete-item]")) return;
       // The row's own checkbox already has a "change" handler below; without
       // this guard, clicking the checkbox fires both handlers (the click
       // bubbling from the checkbox, plus its native change event), toggling
@@ -278,7 +316,7 @@ function bindEvents(container: HTMLElement, tripName: string): void {
       if (ti) {
         const scrollTop = currentScrollTop(container);
         ti.isSelected = !ti.isSelected;
-        await tripItemsDB.put(ti as TripItem);
+        await saveTripItem(ti);
         renderUI(container, tripName, { scrollTop });
       }
     });
@@ -292,7 +330,7 @@ function bindEvents(container: HTMLElement, tripName: string): void {
       if (ti) {
         const scrollTop = currentScrollTop(container);
         ti.isSelected = (cb as HTMLInputElement).checked;
-        await tripItemsDB.put(ti as TripItem);
+        await saveTripItem(ti);
         renderUI(container, tripName, { scrollTop });
       }
     });
@@ -305,12 +343,23 @@ function bindEvents(container: HTMLElement, tripName: string): void {
       const ti = allItems.find((i) => i.itemId === itemId);
       if (ti) {
         ti.count++;
-        await tripItemsDB.put(ti as TripItem);
+        await saveTripItem(ti);
         const el = container.querySelector(`#count-${itemId}`);
         if (el) el.textContent = String(ti.count);
         const decBtn = container.querySelector(`[data-dec="${itemId}"]`) as HTMLButtonElement;
         if (decBtn) decBtn.disabled = ti.count <= 1;
       }
+    });
+  });
+
+  bindTripBagControls(container, () => allItems);
+
+  container.querySelectorAll<HTMLButtonElement>("[data-delete-item]").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const itemId = btn.dataset.deleteItem!;
+      const ti = allItems.find((i) => i.itemId === itemId);
+      if (ti) confirmDeleteCustomItem(ti, container, tripName);
     });
   });
 
@@ -321,7 +370,7 @@ function bindEvents(container: HTMLElement, tripName: string): void {
       const ti = allItems.find((i) => i.itemId === itemId);
       if (ti && ti.count > 1) {
         ti.count--;
-        await tripItemsDB.put(ti as TripItem);
+        await saveTripItem(ti);
         const el = container.querySelector(`#count-${itemId}`);
         if (el) el.textContent = String(ti.count);
         const decBtn = container.querySelector(`[data-dec="${itemId}"]`) as HTMLButtonElement;
@@ -361,7 +410,7 @@ function openAddDialog(container: HTMLElement, tripName: string, presetName: str
       suggestItemToServer(newItem.name, newItem.category);
       allItems = await getTripItemsWithMeta(tripId);
       searchQuery = "";
-      activeCategory = displayCategory(newItem, tripGlobal);
+      activeCategory = itemCategory(newItem);
       added = true;
       showToast(`“${newItem.name}” added`);
     },
@@ -369,6 +418,54 @@ function openAddDialog(container: HTMLElement, tripName: string, presetName: str
       addDialog = null;
       if (added) renderUI(container, tripName);
     },
+  });
+}
+
+function confirmDeleteCustomItem(ti: TripItemWithMeta, container: HTMLElement, tripName: string): void {
+  deleteOverlay?.remove();
+  const overlay = document.createElement("div");
+  overlay.className = "overlay overlay--delete-item";
+  overlay.innerHTML = `
+    <div class="overlay__dialog" role="dialog" aria-labelledby="delete-item-title">
+      <div class="overlay__title" id="delete-item-title">Delete this item?</div>
+      <div class="overlay__message">“${escHtml(ti.item.name)}” will be removed from your lists on this device. The shared suggestion list is not changed.</div>
+      <div class="overlay__actions">
+        <button class="btn btn--secondary" type="button" style="flex:1" id="cancel-delete-item">Cancel</button>
+        <button class="btn btn--danger" type="button" style="flex:1" id="confirm-delete-item">Delete</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  deleteOverlay = overlay;
+
+  const dismiss = () => {
+    overlay.remove();
+    if (deleteOverlay === overlay) deleteOverlay = null;
+  };
+
+  overlay.querySelector("#cancel-delete-item")?.addEventListener("click", dismiss);
+  overlay.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") dismiss();
+  });
+  overlay.querySelector("#confirm-delete-item")?.addEventListener("click", async () => {
+    const confirmBtn = overlay.querySelector("#confirm-delete-item") as HTMLButtonElement;
+    confirmBtn.disabled = true;
+    try {
+      const ok = await deleteLocalCustomItem(ti.itemId);
+      dismiss();
+      if (!ok) {
+        showToast("Catalog items cannot be deleted");
+        return;
+      }
+      const scrollTop = currentScrollTop(container);
+      allItems = await getTripItemsWithMeta(tripId);
+      showToast(`“${ti.item.name}” deleted`);
+      renderUI(container, tripName, { scrollTop });
+    } catch (err) {
+      console.warn("Delete item failed:", err);
+      confirmBtn.disabled = false;
+      showToast("Could not delete item");
+    }
   });
 }
 

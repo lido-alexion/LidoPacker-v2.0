@@ -13,7 +13,7 @@ GitHub: `https://github.com/lido-alexion/LidoPacker-v2.0` (private, separate fro
 | 1 | Smart 669-item catalog | **Done** — `src/data/catalog.json` (v1 ids `"1"`…`"669"`) + `i_*` remap |
 | 2 | Trip attributes (who / transport / weather / types) | **Needed** |
 | 3 | Smart list from those tags | **Needed** — do not dump an unrelated full list |
-| 4 | Subcategory grouping | **Needed**, one UI level: show **subcategory as category** (no nested category→subcategory) |
+| 4 | Category tabs + subcategory groups | **Needed** — v1: one tab per **category**, items grouped by **subcategory** inside the tab |
 | 5–8 | Clone, unpack all, remove all items, trip details | **Needed** |
 | 9 | Item picker starts empty | **Needed** — v1 opt-in select |
 | 10 | Open packing with nothing selected → item picker | **Needed** |
@@ -21,7 +21,7 @@ GitHub: `https://github.com/lido-alexion/LidoPacker-v2.0` (private, separate fro
 | 12 | Show/hide packed items | **Needed** |
 | 13 | Lock attributes once items are selected on the trip | **Needed** — clear items first to edit tags |
 | 14 | v1 `localStorage` → IndexedDB migration | **Deferred** |
-| 15 | Dates | **Date required; time optional.** Date-only stored as `YYYY-MM-DD` (local midnight). Time pickers are 12-hour with minutes **00 / 15 / 30 / 45**, period **AM then PM**. |
+| 15 | Dates | **Date required; time optional.** Date-only stored as `YYYY-MM-DD` (local midnight). Time is a single field that opens a 12-hour clock (`src/components/timePicker.ts`): minutes **00 / 15 / 30 / 45**, period **AM then PM**. Native `input type="time"` cannot lock those steps, so the three dropdowns were replaced with this clock sheet. |
 | 16 | Name + location split | **Keep v2 behaviour** |
 | 17 | Header | Link **Lido Alexion** → https://www.lidoalexion.com |
 | 18 | Deploy path | **`/packer/`** |
@@ -29,19 +29,19 @@ GitHub: `https://github.com/lido-alexion/LidoPacker-v2.0` (private, separate fro
 
 ### Category vs subcategory (item 4)
 
-v1 **does** have both:
+v1 has both:
 
-- **category:** Clothing, Hygiene, Health, Documents, Gadgets, Miscellaneous, Foods, ToDos
-- **subcategory:** Essentials, Beach, Wintersport, Baby, … (often mirrors trip type)
+- **category:** Clothing, Hygiene, Health, Documents, Gadgets, Miscellaneous, Foods, ToDos — **one tab per category** on item selection and packing
+- **subcategory:** Essentials, Beach, Wintersport, Baby, … (often mirrors trip type) — **section headers inside a tab**
 
-Packing in v1: category **tabs**, items **grouped by subcategory** inside a tab.
+v2 matches that: category pills are `item.category` (catalog order). Inside a category (and when search mixes categories), items are grouped by `item.subcategory` (falls back to category). There is no **All** pill; search still looks across every category. Subcategory section headers collapse/expand on click. A 1px light border between sections keeps collapsed sticky headers from merging.
 
-v2 uses a single grouping key: `displayCategory = item.subcategory || item.category` (tabs and sections). No nested category→subcategory UI.
+**Packing pills:** label is `Clothing (2/6)` (packed/total). Counts update when items are packed or unpacked. Fully packed categories (`6/6`) sit at the **end** of the pill row and use a muted grey style when not selected.
 
 ### Deferred (do not implement in this pass)
 
 1. **v1 localStorage import** — map trip-name keys into IndexedDB `trips` / `tripItems`.
-2. **v1 wishlist (item 19+)** — item admin (add/edit/delete catalog), user preferences, color themes, backup/export/import, accounts/cloud sync, login, accessibility pass. See v1 `App.tsx` future to-dos. Trip bags (optional counts of Carry / Luggage / Backpack / Personal item, packing assignment) is implemented.
+2. **v1 wishlist (item 19+)** — item admin (add/edit/delete catalog), user preferences, color themes, backup/export/import, accounts/cloud sync, login, accessibility pass. See v1 `App.tsx` future to-dos. Trip bags (optional counts of Carry / Suitcase/Bag / Backpack, packing assignment) is implemented.
 
 ### Production migration (proposed, not built)
 
@@ -130,7 +130,7 @@ There is no item API. The server list is static file **`/packer/catalog.json`** 
 
 v1 had no `type` / `stage`. Port mapping: ToDos → `TODO`/`EARLY`; Documents (v1 typo `Documants` normalised) → `CARRY`/`LAST_MINUTE`; Clothing → `PACK`/`EARLY`; Hygiene / Health → `PACK`/`MID`; else `PACK`/`MID`. Missing `defaultCount` → 1. Untagged travellers/weathers/vehicles stay omitted.
 
-IndexedDB schema is **`DB_VERSION` 4** so devices that already opened v3 without a `meta` store still get one (v3-without-meta made catalog boot throw Storage Error). `meta` keeps `catalogLastUpdated`. Boot in `main.ts`: `initDB` then `syncCatalog` (before the router paints). Catalog sync failures are logged and do not block Home. If the server fetch fails, a newer **bundled** copy of `catalog.json` still applies so existing v2 devices pick up the 669-item list from the JS payload.
+IndexedDB schema is **`DB_VERSION` 6**. v4 added `meta` (catalog last_updated) for devices that opened v3 without it. v5/v6 add a `tripItems.itemId` index on stores that were created before that index existed, so deleting a user-added item can find every trip row. `meta` keeps `catalogLastUpdated`. Boot in `main.ts`: `initDB` then `syncCatalog` (before the router paints). Catalog sync failures are logged and do not block Home. If the server fetch fails, a newer **bundled** copy of `catalog.json` still applies so existing v2 devices pick up the 669-item list from the JS payload.
 
 | Visit | What happens |
 |---|---|
@@ -148,17 +148,19 @@ On refresh: upsert server items; keep `custom_*`; keep removed catalog ids that 
 
 Item-selection shows a small primary **+** FAB (same green as Add trip on Home, `z-index` 30 so it stays above sticky section headers). The list has bottom padding so the last row is not covered. Search text still pre-fills the name.
 
-The add dialog collects the same fields a catalog item has: name, category, subcategory, type (Pack / Wear / Carry / Task), packing time (Early / Mid / Last minute / After), preferred quantity (or **N/A** for tasks — stored as `defaultCount` / trip `count` `0`), default luggage type (Carry / Luggage / Backpack / Personal item / Wear; catalog rows omit this), and tags (who, travel mode, weather, trip types). Category and subcategory are single-select pills taken from items already on the trip (no Custom, no free typing). **Add** and **Add another** stay disabled until name, category, and subcategory are set. **Add another** saves, keeps the rest of the form, and clears only the name. Tags start unselected; empty groups mean “match any trip”.
+The add dialog collects the same fields a catalog item has: name, category, subcategory, type (**CARRY** / **PACK** / **TODO** / **WEAR** — catalog uses the first three; WEAR is in the schema), packing time (Early / Mid / Last minute / After), preferred quantity (or **N/A** for TODO items — stored as `defaultCount` / trip `count` `0`), default luggage type (Carry / Suitcase/Bag / Backpack only), and tags (who, travel mode, weather, trip types). Category, subcategory, type, packing time, and default luggage are single-select pills. Category and subcategory come from items already on the trip (no Custom, no free typing). Type defaults to **PACK**, packing time to Mid trip, and luggage to **Carry**. **TODO** items hide luggage (none stored) and default quantity to N/A. **Add** and **Add another** stay disabled until name, category, and subcategory are set. **Add another** saves, keeps the rest of the form, and clears only the name. Tags start unselected; empty groups mean “match any trip”. Items with type **TODO** are not assigned a packing bag.
 
 ## Trip bags
 
-Create/edit trip has an optional **Bags you're taking** list (type + count). Types: Carry (default packing bag), Luggage, Backpack, Personal item. Omit the section to skip bag assignment.
+Create/edit trip has an optional **Bags you're taking** list (type + count). Types: Carry (default packing bag), Suitcase/Bag, Backpack. Omit the section to skip bag assignment.
 
-Stored on the trip as `bags: [{ type, count }]`. Each packing row gets `bagId` like `carry:1` or `luggage:2`. New trip items default to Carry if that type exists, else the item’s default luggage type, else the first bag.
+Stored on the trip as `bags: [{ type, count }]`. Each packing row gets `bagId` like `carry:1` or `luggage:2`. New trip items default to Carry if that type exists, else the item’s default luggage type, else the first bag. **`bagId` is independent of `isPacked`:** the user can assign a bag while preparing the list (item selection) without marking the item packed. IndexedDB writes use a stripped `TripItem` row (`persistableTripItem`) so the nested catalog `item` is never stored. A valid stored `bagId` is never overwritten on load; missing/invalid ids are filled from the default. Unpack-all and clone keep `bagId`.
 
-Packing: if the trip has **more than one bag slot**, each item shows a dropdown (Carry, Luggage 1, Luggage 2, …). A type with count 1 is not numbered. A trip with only one bag total has no dropdown. Changing bags on Edit remaps existing `bagId`s (overflow slots clamp down; removed types fall back to Carry). Clone copies bags and assignments.
+Packing **and item selection**: if the trip has **at least one bag slot**, each item shows a bag picker of **only those added bags** (a single bag still shows its icon, selected). **1–5 slots** use **filled icon pills** (one selectable): red Carry tote, dark-blue briefcase Suitcase/Bag, simple orange Backpack. Hover shows the name (e.g. Suitcase/Bag 2). When a type has count > 1 the icon is numbered (1, 2, …). **More than 5 slots** uses a compact dropdown instead. Packing selects the item’s default type when that bag is on the trip (catalog items with no luggage default to Carry, then Carry 1 if there are several). If that type is missing, Carry is used if present, otherwise the first added bag. Task-type (**TODO**) items have no bag picker. Changing bags on Edit remaps existing `bagId`s (overflow slots clamp down; removed types fall back to Carry). Clone copies bags and assignments.
 
 The item is written to IndexedDB as `custom_*`, selected on the current trip. Catalog sync already keeps `custom_*` rows when `/packer/catalog.json` updates.
+
+Item-selection rows for `custom_*` items show a delete control. Confirming removes the item from IndexedDB (`items` + every `tripItems` row with that id) so it leaves this device’s lists. Catalog ids cannot be deleted. **Delete does not call the suggestion API** and does not change `{public_html}/packer-data/suggestions.json`.
 
 A copy of the name is POSTed to `/packer/api/suggest-item.php` (fire-and-forget; packing still works if PHP is down or you are on webpack-dev-server). Suggestions are **not** MySQL. They append to JSON at `{public_html}/packer-data/suggestions.json` (sibling of `packer/`, so a full folder replace of `packer/` does not wipe them). Same name is counted, not duplicated. Max 80 characters, 3000 unique names.
 
@@ -204,7 +206,7 @@ Same GoDaddy/cPanel host as Portfolio. Serve `dist/` as `/packer/`.
 powershell -ExecutionPolicy Bypass -File deploy/prepare-upload.ps1
 ```
 
-Upload `deploy/staging/packer/` over `public_html/packer/` (replace the whole folder, including hidden `.htaccess`). Details: [deploy/DEPLOY.md](deploy/DEPLOY.md). This release bumps the service-worker cache to `lidopacker-v2-cache-v7`.
+Upload `deploy/staging/packer/` over `public_html/packer/` via FTP (replace the whole folder, including hidden `.htaccess`). Details: [deploy/DEPLOY.md](deploy/DEPLOY.md). This release bumps the service-worker cache to `lidopacker-v2-cache-v9`.
 
 ### Storage Error on the dashboard (2026-08-25)
 
@@ -226,11 +228,11 @@ Fixed `lido-alexion/LidoPacker-v2.0` issues #1, #3, #4, #6 and best-effort #2/#5
 |---|---|---|
 | 1 | Scrollbar on narrow content body, dead zone on wide screens | **Follow-up (2026-08-25):** page-level scroll on `html`/`body` so the scrollbar sits on the window. The app column (`#app`, site header, screens) is a centred 500px card — chrome bars, dividers, and lists all stay in that column (not full-bleed). FAB is `position: fixed` against the column edge. `scrollChrome.ts` listens to `window` scroll. |
 | 3 | Selecting an item scrolls the item-selection pane back to top | `itemSelectionScreen.ts` fully re-renders `innerHTML` on every toggle, which reset `scrollTop`. `renderUI` now takes `{ scrollTop }` and every mutating call site captures/restores it via `currentScrollTop()`. |
-| 4 | Item-selection categories don't match the trip's selected tags; unrelated tabs (e.g. Beach/Hiking) appear | Root cause: `displayCategory` grouped by `item.subcategory` regardless of *why* the item matched the trip (an item can carry several `types` tags but only one subcategory, e.g. Swimwear is tagged Beach+Swimming but its subcategory is "Beach"). `tripFilter.ts#displayCategory(item, trip?)` now falls back to the item's broader `category` when the subcategory is tag-driven but that specific tag wasn't selected on the trip. Threaded the optional `trip` through `itemService.ts` (`getCategories`, `fuzzySearch`) and both screens that render tabs/groups. Note: the "too few items" / "no kid or bike-specific items" part of this issue was a data-catalog gap; the 669-item v1 catalog is now ported (see item 1 in the Catch-up decisions table). Baby-tagged rows still require the Baby traveller (and overlapping types) to show. |
+| 4 | Item-selection categories don't match the trip's selected tags; unrelated tabs (e.g. Beach/Hiking) appear | **Superseded (2026-08-26):** tabs are now catalog **category** (Clothing, Hygiene, ToDos, …), same as v1, so Beach/Hiking never appear as tabs. Inside a tab, items group by **subcategory**. The old `displayCategory` trip-aware fallback remains for tests/search ranking only. |
 | 6 | Edit-trip lock message easy to miss; tags don't look disabled; no way to unlock without leaving the screen; Save always enabled | `attributePicker.ts`: lock note is now a `banner--warning` with a 🔒 icon. `main.scss`: `.attr-fieldset:disabled` greys out `.chip`/`.chip--selected` explicitly instead of relying on opacity alone. `editTripScreen.ts`: added a "Remove all items to edit tags" button (reuses `replaceTripItems`, same semantics as the home-screen "Remove all items" action) that re-renders the screen unlocked; Save Changes starts disabled and only enables once a normalised snapshot (name/location/dates/attrs, array-sorted) of the form differs from the initial one. |
 | 2, 5 | Real-estate optimisation on item-selection / packing screens | ... Packing controls (follow-up): short viewports (`max-height: 719px`) keep the compact 3-icon mode switch and a search *button* that expands in-row (hiding the other controls). Taller screens show three labelled buttons (All items / Last minute / Forgot) and a persistent search field. Show-packed is an icon toggle (🙈 hidden / 👁️ shown). A second toggle (☰ / ⬇️) sinks packed rows to the bottom of each category. |
 
-Unit tests: added trip-aware `displayCategory` cases in `qa/unitTests.ts` (tag-driven subcategory only shown when its tag is selected on the trip; non-tag-driven "Essentials" bucket always shown).
+Unit tests: category tabs use catalog `category` in Clothing → … → ToDos order; section labels use subcategory (`Clothing · Beach` when search mixes categories). `displayCategory` trip-aware cases remain.
 
 ### Follow-up fixes found via manual/computer-use regression testing
 

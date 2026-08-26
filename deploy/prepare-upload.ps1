@@ -58,24 +58,27 @@ $files = Get-ChildItem $staging -Recurse -File | Measure-Object | Select-Object 
 - **JS:** ``$js``
 - **CSS:** ``$css``
 
-## Upload
+## Upload (FTP)
 
-Replace the **entire** ``packer`` folder on the server with the staged copy ($files files).
+Replace the **entire** ``packer`` folder on the server with the staged copy ($files files). Full FileZilla steps: [DEPLOY.md](DEPLOY.md).
 
-| Local (this PC) | Server (cPanel File Manager) |
+| Local (this PC) | Server (FTP) |
 |---|---|
-| ``deploy/staging/packer/`` (all files) | ``/home/p7xatiz6j0mk/public_html/packer/`` |
+| ``deploy/staging/packer/`` (all files, including hidden ``.htaccess``) | ``public_html/packer/`` |
 
-Do not merge into the old v1 files. Delete the existing ``packer`` contents first, then upload this folder, so leftover CRA chunks and the old service worker cannot mix with v2.
+1. FileZilla: **Server -> Force showing hidden files**.
+2. Open the **server** folder ``public_html/packer/``. Delete its contents (do **not** delete ``public_html/packer-data/`` next door).
+3. Upload everything from the local folder above into that empty ``packer`` folder.
+4. Confirm ``index.html`` is in ``public_html/packer/``, not in a nested ``packer/packer/``.
 
-``.htaccess`` must be in the uploaded folder (File Manager: enable "Show Hidden Files").
+Do not merge into leftover v1 files.
 
 ## After upload
 
 1. Open https://www.lidoalexion.com/packer/ and hard-refresh (Ctrl+Shift+R).
 2. Confirm page source includes ``$js`` and ``$css``.
 3. Create a trip, open packing, refresh - you should stay on that trip, not bounce home.
-4. Open a long item list and confirm the toolbar does not collapse to a sliver.
+4. Item picker: **+** to add an item; Create/edit trip: optional bags.
 
 Do not delete ``public_html/packer-data/`` when replacing the packer folder (user item suggestions live there).
 

@@ -67,7 +67,7 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
         </div>
         <div class="form-field">
           <label>Departure time <span class="label-optional">(optional)</span></label>
-          ${renderTimePicker("trip-start-time", startTime)}
+          ${renderTimePicker("trip-start-time", startTime, "Departure time")}
         </div>
         <div class="form-field">
           <label>Return date <span class="label-optional">(optional)</span></label>
@@ -75,7 +75,7 @@ export async function renderEditTripScreen(container: HTMLElement, tripId: strin
         </div>
         <div class="form-field">
           <label>Return time <span class="label-optional">(optional)</span></label>
-          ${renderTimePicker("trip-end-time", endTime)}
+          ${renderTimePicker("trip-end-time", endTime, "Return time")}
         </div>
         <div id="attr-host"></div>
         <div id="bag-host"></div>

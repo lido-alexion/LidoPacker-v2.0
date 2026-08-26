@@ -2,6 +2,7 @@ import { tripsDB, tripItemsDB } from "../db/database";
 import { router } from "../utils/router";
 import { showToast } from "../components/toast";
 import { validateTrip } from "../utils/validation";
+import { persistableTripItem } from "../utils/tripItemPersist";
 import { isTripNameTaken, uniqueCloneName } from "../utils/tripNames";
 
 export async function renderCloneTripScreen(container: HTMLElement, tripId: string): Promise<void> {
@@ -61,7 +62,7 @@ export async function renderCloneTripScreen(container: HTMLElement, tripId: stri
 
     const items = await tripItemsDB.getByTrip(trip.id);
     await tripsDB.put(clone);
-    await tripItemsDB.putMany(items.map((ti) => ({ ...ti, tripId: clone.id })));
+    await tripItemsDB.putMany(items.map((ti) => persistableTripItem({ ...ti, tripId: clone.id })));
 
     showToast("Trip cloned");
     router.navigate({ name: "home" }, { replace: true });

@@ -15,7 +15,7 @@ import {
 import { itemMatchesTrip } from "../utils/tripFilter";
 import { validateTripItem } from "../utils/validation";
 import { tripItemCountFor } from "../utils/customItem";
-import { defaultBagId } from "../utils/tripBags";
+import { resolvedItemBagId } from "../utils/tripBags";
 
 const FETCH_TIMEOUT_MS = 8000;
 
@@ -91,7 +91,7 @@ async function addMissingTripItems(catalogItems: Item[]): Promise<void> {
     const have = new Set(current.map((row) => row.itemId));
     for (const item of catalogItems) {
       if (have.has(item.id) || !itemMatchesTrip(item, trip)) continue;
-      const bagId = defaultBagId(trip.bags, item.luggage);
+      const bagId = resolvedItemBagId(item, trip);
       const ti: TripItem = {
         tripId: trip.id,
         itemId: item.id,

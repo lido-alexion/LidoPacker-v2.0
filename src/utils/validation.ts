@@ -1,7 +1,6 @@
-import { Item, ItemStage, ItemType, Trip, TripItem } from "./types";
+import { Item, ItemStage, ITEM_TYPES, Trip, TripItem } from "./types";
 import { parseTripInstant } from "./timeEngine";
 
-const ITEM_TYPES: ItemType[] = ["PACK", "WEAR", "CARRY", "TODO"];
 const ITEM_STAGES: ItemStage[] = ["EARLY", "MID", "LAST_MINUTE", "POST"];
 
 export function isValidIsoDate(value: string | undefined): boolean {

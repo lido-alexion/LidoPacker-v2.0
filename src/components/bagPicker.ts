@@ -32,7 +32,7 @@ export function renderBagFields(bags: TripBag[]): string {
   return `
     <div class="form-field" id="bag-host-inner">
       <label>Bags you're taking <span class="label-optional">(optional)</span></label>
-      <div class="form-hint">Example: 2 Luggage and 1 Carry. Items default to Carry. A dropdown appears when packing only if you have more than one bag.</div>
+      <div class="form-hint">Example: 2 Suitcase/Bag and 1 Carry. New items default to Carry. On the item list and packing, pick a bag before you pack — that choice is remembered. More than 5 bags uses a dropdown. Tasks have no bag.</div>
       <div class="bag-rows">${body}</div>
       ${unused.length ? `<button type="button" class="text-btn" id="add-bag-btn">+ Add a bag</button>` : ""}
     </div>

@@ -1,8 +1,8 @@
 import { Item, ScheduledNotification, Trip, TripItem } from "../utils/types";
 
 const DB_NAME = "LidoPackerDB";
-/** Bumped to 4 so devices already on v3 get the `meta` store (catalog last_updated). */
-const DB_VERSION = 4;
+/** Bumped to 6 so tripItems on older devices get an `itemId` index (v5 could land without it). */
+const DB_VERSION = 6;
 const STORE_NAMES = [
   "items",
   "trips",
@@ -48,6 +48,22 @@ function ensureStores(database: IDBDatabase): void {
   }
 }
 
+function ensureIndexes(tx: IDBTransaction): void {
+  const add = (storeName: string, name: string, keyPath: string): void => {
+    if (!tx.objectStoreNames.contains(storeName)) return;
+    const store = tx.objectStore(storeName);
+    if (!store.indexNames.contains(name)) {
+      store.createIndex(name, keyPath, { unique: false });
+    }
+  };
+  add("items", "category", "category");
+  add("items", "stage", "stage");
+  add("tripItems", "tripId", "tripId");
+  add("tripItems", "itemId", "itemId");
+  add("scheduledNotifications", "tripId", "tripId");
+  add("scheduledNotifications", "fireAt", "fireAt");
+}
+
 function missingStores(database: IDBDatabase): string[] {
   return STORE_NAMES.filter((name) => !database.objectStoreNames.contains(name));
 }
@@ -57,7 +73,9 @@ function openAtVersion(version?: number): Promise<IDBDatabase> {
     const request = version == null ? indexedDB.open(DB_NAME) : indexedDB.open(DB_NAME, version);
 
     request.onupgradeneeded = (event) => {
-      ensureStores((event.target as IDBOpenDBRequest).result);
+      ensureStores(request.result);
+      const tx = request.transaction || (event.target as IDBOpenDBRequest).transaction;
+      if (tx) ensureIndexes(tx);
     };
 
     request.onblocked = () => {
@@ -108,6 +126,10 @@ function getDB(): IDBDatabase {
 
 function hasStore(store: string): boolean {
   return getDB().objectStoreNames.contains(store);
+}
+
+function storeHasIndex(store: string, index: string): boolean {
+  return getDB().transaction(store, "readonly").objectStore(store).indexNames.contains(index);
 }
 
 function txGet<T>(store: string, key: IDBValidKey): Promise<T | undefined> {
@@ -221,6 +243,13 @@ export const tripsDB = {
 export const tripItemsDB = {
   getAll: () => txGetAll<TripItem>("tripItems"),
   getByTrip: (tripId: string) => txGetAll<TripItem>("tripItems", "tripId", tripId),
+  getByItemId: async (itemId: string) => {
+    if (storeHasIndex("tripItems", "itemId")) {
+      return txGetAll<TripItem>("tripItems", "itemId", itemId);
+    }
+    const all = await txGetAll<TripItem>("tripItems");
+    return all.filter((row) => row.itemId === itemId);
+  },
   get: (tripId: string, itemId: string) =>
     txGet<TripItem>("tripItems", [tripId, itemId]),
   put: (tripItem: TripItem) => txPut("tripItems", tripItem),

@@ -1,4 +1,6 @@
-export type ItemType = "PACK" | "WEAR" | "CARRY" | "TODO";
+/** Closed item-type list from the catalog (CARRY / PACK / TODO) plus schema WEAR. */
+export const ITEM_TYPES = ["CARRY", "PACK", "TODO", "WEAR"] as const;
+export type ItemType = (typeof ITEM_TYPES)[number];
 export type ItemStage = "EARLY" | "MID" | "LAST_MINUTE" | "POST";
 export type TripPhase = "EARLY" | "MID" | "LAST_MINUTE" | "POST";
 
@@ -8,7 +10,7 @@ export interface Item {
   id: string;
   name: string;
   category: string;
-  /** v1 subcategory; packing UI shows this as the single grouping level when set. */
+  /** v1 subcategory; lists group items by this inside a category tab. */
   subcategory?: string;
   type: ItemType;
   stage: ItemStage;
